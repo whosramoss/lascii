@@ -1,0 +1,27 @@
+{
+  "name": "lascii",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lightweight ASCII animation effects for the web",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./dom": "./src/adapters/dom/index.js",
+    "./core/text": "./src/core/effects/LasciiTextEffect.js",
+    "./core/image": "./src/core/effects/LasciiImageEffect.js"
+  },
+  "sideEffects": [
+    "./src/index.js",
+    "./src/adapters/dom/index.js"
+  ],
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "ascii",
+    "animation",
+    "effect"
+  ],
+  "license": "MIT"
+}
