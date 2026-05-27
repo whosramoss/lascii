@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Lightweight ASCII animation effects for the web."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="LASCII" />
+    <meta
+      property="og:description"
+      content="Lightweight ASCII animation effects for the web."
+    />
+    <meta property="og:image" content="/icons/thumbnail.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="LASCII" />
+    <meta
+      name="twitter:description"
+      content="Lightweight ASCII animation effects for the web."
+    />
+    <meta name="twitter:image" content="/icons/thumbnail.png" />
+    <title>LASCII</title>
+    <link rel="icon" type="image/x-icon" href="/icons/favicon.ico" />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/icons/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/icons/favicon-16x16.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/icons/apple-touch-icon.png"
+    />
+    <link rel="stylesheet" href="./global.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header class="hero">
+        <h1 data-lascii-text>lascii</h1>
+        <p data-lascii-text>
+          Lightweight ASCII animation effects for the web. Transform images and
+          text into living character art.
+        </p>
+        <p class="hero-npm">
+          <a
+            class="hero-link"
+            href="https://www.npmjs.com/package/lascii"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View on npm &rarr; lascii
+          </a>
+        </p>
+      </header>
+
+      <section>
+        <span class="section-label">Text Effect — Single Reveal</span>
+        <div class="text-demos">
+          <p class="large" data-lascii-text>Art is code made visible</p>
+          <p data-lascii-text>
+            Every pixel becomes a character. Every character tells a story.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <span class="section-label">Text Effect — Loop Mode</span>
+        <div class="text-demos">
+          <p class="large" data-lascii-text>
+            Generative|:|Procedural|:|Algorithmic|:|Digital
+          </p>
+          <p data-lascii-text>
+            ASCII art|:|Pixel art|:|Glitch art|:|Net art|:|Code art
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <span class="section-label">Image Effect — Grid</span>
+        <div class="gallery">
+          <div class="image-wrap">
+            <img
+              data-lascii-image
+              src="https://images.unsplash.com/photo-1605106702734-205df224ecce?w=600&h=750&fit=crop"
+              alt="Abstract geometric art"
+            />
+          </div>
+          <div class="image-wrap">
+            <img
+              data-lascii-image
+              src="https://images.unsplash.com/photo-1549490349-8643362247b5?w=600&h=750&fit=crop"
+              alt="Neon light installation"
+            />
+          </div>
+          <div class="image-wrap">
+            <img
+              data-lascii-image
+              src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&h=750&fit=crop"
+              alt="Digital gradient art"
+            />
+          </div>
+          <div class="image-wrap">
+            <img
+              data-lascii-image
+              src="https://images.unsplash.com/photo-1633186710895-309db2eca9e4?w=600&h=750&fit=crop"
+              alt="Generative pattern"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <span class="section-label">Image Effect — Wide Format</span>
+        <div class="gallery gallery-wide">
+          <div class="image-wrap landscape">
+            <img
+              data-lascii-image
+              src="https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1200&h=675&fit=crop"
+              alt="Retro tech aesthetic"
+            />
+          </div>
+          <div class="image-wrap landscape">
+            <img
+              data-lascii-image
+              src="https://images.unsplash.com/photo-1563089145-599997674d42?w=1200&h=675&fit=crop"
+              alt="Abstract light trails"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <span class="section-label">Usage — Vanilla HTML</span>
+        <pre class="code-block">
+        <code>
+&lt;script type="module"&gt;
+  import "lascii";
+&lt;/script&gt;
+
+&lt;p data-lascii-text&gt;Hello World&lt;/p&gt;
+&lt;p data-lascii-text&gt;Loop|:|Mode|:|Example&lt;/p&gt;
+
+&lt;div class="image-wrap"&gt;
+  &lt;img data-lascii-image src="photo.jpg" alt="Art"&gt;
+&lt;/div&gt;
+</code>
+</pre>
+      </section>
+
+      <footer>
+        <p data-lascii-text>LASCII — ascii animations for the modern web</p>
+      </footer>
+    </div>
+
+    <script type="module">
+      import "lascii";
+    </script>
+  </body>
+</html>
