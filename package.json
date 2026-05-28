@@ -1,27 +1,57 @@
 {
   "name": "lascii",
   "version": "1.0.0",
-  "private": true,
   "description": "Lightweight ASCII animation effects for the web",
   "type": "module",
   "main": "./src/index.js",
+  "types": "./src/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./dom": "./src/adapters/dom/index.js",
-    "./core/text": "./src/core/effects/LasciiTextEffect.js",
-    "./core/image": "./src/core/effects/LasciiImageEffect.js"
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./dom": {
+      "types": "./src/adapters/dom/index.d.ts",
+      "import": "./src/adapters/dom/index.js",
+      "default": "./src/adapters/dom/index.js"
+    },
+    "./core/text": {
+      "types": "./src/core/effects/LasciiTextEffect.d.ts",
+      "import": "./src/core/effects/LasciiTextEffect.js",
+      "default": "./src/core/effects/LasciiTextEffect.js"
+    },
+    "./core/image": {
+      "types": "./src/core/effects/LasciiImageEffect.d.ts",
+      "import": "./src/core/effects/LasciiImageEffect.js",
+      "default": "./src/core/effects/LasciiImageEffect.js"
+    }
   },
   "sideEffects": [
     "./src/index.js",
     "./src/adapters/dom/index.js"
   ],
   "files": [
-    "src"
+    "src",
+    "docs",
+    "CHANGELOG.md"
   ],
   "keywords": [
     "ascii",
     "animation",
-    "effect"
+    "effect",
+    "dom",
+    "canvas",
+    "text-effect"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "author": "Gabriel Ramos (https://github.com/whosramoss)",
+  "homepage": "https://lascii.whosramoss.com",
+  "bugs": {
+    "url": "https://github.com/whosramoss/lascii/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whosramoss/lascii.git"
+  }
 }
