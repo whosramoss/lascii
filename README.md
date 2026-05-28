@@ -8,15 +8,15 @@
 <p align="center">
  Lightweight ASCII animation effects for the web. Transform images and text into living character art.
   <br /> <br />
-  <a href="#how-to-install">How to install</a> 
+  <a href="#how-to-install">Install</a>
   ·
   <a href="#usage">Usage</a>
-   ·
+  ·
   <a href="#effects">Effects</a>
 </p>
 
 <p align="center">
-  <a href="https://lascii.whosramoss.com">Learn More</a>
+  <a href="https://lascii.whosramoss.com">Live demo</a>
 </p>
 
 ## How to install
@@ -46,27 +46,29 @@ The effect auto-initializes on DOM ready. No configuration needed.
 
 ## Effects
 
-### Text Effect
+### Text effect
 
 | Feature       | How                                                  |
 | ------------- | ---------------------------------------------------- |
 | Single reveal | `<p data-lascii-text>Hello</p>`                      |
 | Loop phrases  | Separate with `\|:\|` — `First\|:\|Second\|:\|Third` |
 
-### Image Effect
+### Image effect
 
 Wrap an `<img>` with `data-lascii-image` inside a positioned container with `overflow: hidden`. The effect samples the image, renders an ASCII canvas animation, then fades to the original.
 
 ### Configuration
 
-By default, `import "lascii"` runs `init()` on DOM ready and uses built-in defaults. To customize behavior, use the programmatic API: import the effect classes, pass an options object to the constructor (merged over `DEFAULTS`), and wire elements yourself.
+By default, `import "lascii"` runs `init()` on DOM ready and uses built-in defaults. To customize behavior, import the effect classes, pass an options object to the constructor (merged over `DEFAULTS`), and wire elements yourself.
+
+See the **[API reference](./docs/API.md)** for all options, exports, and TypeScript types.
 
 ### Manual setup
 
 ```js
-import { LasciiImageEffect, LasciiTextEffect, init } from "lascii";
+import LasciiTextEffect from "lascii/core/text";
+import LasciiImageEffect from "lascii/core/image";
 
-// Optional: skip auto-init and control everything
 document.querySelectorAll("[data-lascii-image]").forEach((img, index) => {
   new LasciiImageEffect(img, index, { SCRAMBLE_COUNT: 20 });
 });
@@ -75,4 +77,14 @@ new LasciiTextEffect(document.querySelector(".headline"), {
   phraseDelay: 1200,
   revealOrigin: LasciiTextEffect.RevealOrigin.MIDDLE,
 });
+```
+
+For auto-init without importing the main entry (side effects), use subpath imports from `lascii/core/*` and call `LasciiTextEffect.init()` / `LasciiImageEffect.init()` — details in [API](./docs/API.md).
+
+## TypeScript
+
+Declaration files ship with the package. No separate `@types` package required.
+
+```ts
+import { LasciiTextEffect, LasciiImageEffect } from "lascii";
 ```
