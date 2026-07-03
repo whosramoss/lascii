@@ -37,6 +37,9 @@ Desktop.ini
 coverage/
 .nyc_output/
 
+# Build
+dist/
+
 # Misc
 *.tsbuildinfo
 .cache/

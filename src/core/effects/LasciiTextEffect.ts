@@ -1,10 +1,38 @@
+export type RevealOriginValue = "start" | "middle";
+
+export interface LasciiTextEffectOptions {
+  introChars?: string;
+  introPhaseFrames?: number;
+  chars?: string;
+  frameStartMax?: number;
+  frameEndMax?: number;
+  randomCharChance?: number;
+  phraseDelay?: number;
+  separator?: string;
+  revealOrigin?: RevealOriginValue;
+}
+
+export interface LasciiTextEffectDefaults
+  extends Required<LasciiTextEffectOptions> {}
+
+interface QueueItem {
+  from: string;
+  to: string;
+  start: number;
+  end: number;
+  char: string;
+}
+
 class LasciiTextEffect {
   static RevealOrigin = Object.freeze({
     START: "start",
     MIDDLE: "middle",
-  });
+  }) as Readonly<{
+    readonly START: "start";
+    readonly MIDDLE: "middle";
+  }>;
 
-  static DEFAULTS = {
+  static DEFAULTS: LasciiTextEffectDefaults = {
     introChars: "█▓▒░x92",
     introPhaseFrames: 10,
     chars: "!<>-_\\/[]{}—=+*^?#________",
@@ -16,7 +44,19 @@ class LasciiTextEffect {
     revealOrigin: LasciiTextEffect.RevealOrigin.START,
   };
 
-  constructor(element, options = {}) {
+  el: HTMLElement;
+  config: LasciiTextEffectDefaults;
+  queue: QueueItem[];
+  frame: number;
+  frameRequest: number | null;
+  resolve: (() => void) | null;
+  safetyTimeout: ReturnType<typeof setTimeout> | null;
+  rawText: string;
+  phrases: string[];
+  shouldLoop: boolean;
+  counter: number;
+
+  constructor(element: HTMLElement, options: LasciiTextEffectOptions = {}) {
     this.el = element;
     this.config = { ...LasciiTextEffect.DEFAULTS, ...options };
     this.queue = [];
@@ -24,7 +64,7 @@ class LasciiTextEffect {
     this.frameRequest = null;
     this.resolve = null;
     this.safetyTimeout = null;
-    this.rawText = this.el.textContent.trim();
+    this.rawText = (this.el.textContent ?? "").trim();
     this.phrases = this.extractPhrases();
     this.shouldLoop = this.rawText.includes(this.config.separator);
     this.counter = 0;
@@ -32,18 +72,18 @@ class LasciiTextEffect {
     this.start();
   }
 
-  extractPhrases() {
+  extractPhrases(): string[] {
     return this.rawText
       .split(this.config.separator)
       .map((text) => text.trim())
       .filter(Boolean);
   }
 
-  clearInitialText() {
+  clearInitialText(): void {
     this.el.textContent = "";
   }
 
-  start() {
+  start(): void {
     if (!this.phrases.length) return;
     if (this.shouldLoop) {
       this.displayNextPhrase();
@@ -52,7 +92,7 @@ class LasciiTextEffect {
     }
   }
 
-  displayNextPhrase() {
+  displayNextPhrase(): void {
     const currentPhrase = this.phrases[this.counter];
     this.setText(currentPhrase).then(() => {
       setTimeout(() => {
@@ -62,14 +102,14 @@ class LasciiTextEffect {
     });
   }
 
-  updateCounter() {
+  updateCounter(): void {
     this.counter = (this.counter + 1) % this.phrases.length;
   }
 
-  setText(newText) {
+  setText(newText: string): Promise<void> {
     const oldText = this.el.innerText;
     const length = Math.max(oldText.length, newText.length);
-    const promise = new Promise((resolve) => {
+    const promise = new Promise<void>((resolve) => {
       this.resolve = resolve;
     });
     this.queue = this.buildQueue(oldText, newText, length);
@@ -87,8 +127,8 @@ class LasciiTextEffect {
     return promise;
   }
 
-  buildQueue(oldText, newText, length) {
-    const queue = [];
+  buildQueue(oldText: string, newText: string, length: number): QueueItem[] {
+    const queue: QueueItem[] = [];
     const origin =
       this.config.revealOrigin ?? LasciiTextEffect.RevealOrigin.START;
     const cap = this.config.frameStartMax;
@@ -117,13 +157,13 @@ class LasciiTextEffect {
     return queue;
   }
 
-  resetAnimation() {
-    cancelAnimationFrame(this.frameRequest);
+  resetAnimation(): void {
+    cancelAnimationFrame(this.frameRequest!);
     this.frame = 0;
     this.update();
   }
 
-  update = () => {
+  update = (): void => {
     let output = "";
     let complete = 0;
     for (let i = 0; i < this.queue.length; i++) {
@@ -160,7 +200,7 @@ class LasciiTextEffect {
     this.el.innerHTML = output;
     if (complete === this.queue.length) {
       this.el.textContent = this.queue.map((item) => item.to).join("");
-      clearTimeout(this.safetyTimeout);
+      clearTimeout(this.safetyTimeout!);
       this.resolve?.();
     } else {
       this.frameRequest = requestAnimationFrame(this.update);
@@ -168,16 +208,16 @@ class LasciiTextEffect {
     }
   };
 
-  randomChar() {
+  randomChar(): string {
     return this.config.chars[
       Math.floor(Math.random() * this.config.chars.length)
     ];
   }
 
-  static init(selector = "[data-lascii-text]") {
+  static init(selector = "[data-lascii-text]"): void {
     const elements = document.querySelectorAll(selector);
     elements.forEach((element) => {
-      new LasciiTextEffect(element);
+      new LasciiTextEffect(element as HTMLElement);
     });
   }
 }

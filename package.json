@@ -3,39 +3,44 @@
   "version": "1.0.0",
   "description": "Lightweight ASCII animation effects for the web",
   "type": "module",
-  "main": "./src/index.js",
-  "types": "./src/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.d.ts",
-      "import": "./src/index.js",
-      "default": "./src/index.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./dom": {
-      "types": "./src/adapters/dom/index.d.ts",
-      "import": "./src/adapters/dom/index.js",
-      "default": "./src/adapters/dom/index.js"
+      "types": "./dist/adapters/dom/index.d.ts",
+      "import": "./dist/adapters/dom/index.js",
+      "default": "./dist/adapters/dom/index.js"
     },
     "./core/text": {
-      "types": "./src/core/effects/LasciiTextEffect.d.ts",
-      "import": "./src/core/effects/LasciiTextEffect.js",
-      "default": "./src/core/effects/LasciiTextEffect.js"
+      "types": "./dist/core/effects/LasciiTextEffect.d.ts",
+      "import": "./dist/core/effects/LasciiTextEffect.js",
+      "default": "./dist/core/effects/LasciiTextEffect.js"
     },
     "./core/image": {
-      "types": "./src/core/effects/LasciiImageEffect.d.ts",
-      "import": "./src/core/effects/LasciiImageEffect.js",
-      "default": "./src/core/effects/LasciiImageEffect.js"
+      "types": "./dist/core/effects/LasciiImageEffect.d.ts",
+      "import": "./dist/core/effects/LasciiImageEffect.js",
+      "default": "./dist/core/effects/LasciiImageEffect.js"
     }
   },
   "sideEffects": [
-    "./src/index.js",
-    "./src/adapters/dom/index.js"
+    "./dist/index.js",
+    "./dist/adapters/dom/index.js"
   ],
   "files": [
+    "dist",
     "src",
     "docs",
     "CHANGELOG.md"
   ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build"
+  },
   "keywords": [
     "ascii",
     "animation",
@@ -53,5 +58,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/whosramoss/lascii.git"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
   }
 }

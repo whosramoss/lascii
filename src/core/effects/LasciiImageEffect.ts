@@ -1,5 +1,25 @@
+export interface LasciiImageEffectOptions {
+  ASCII_CHARS?: string;
+  FONT_SIZE?: number;
+  ASPECT_WIDTH?: number;
+  ASPECT_HEIGHT?: number;
+  ASCII_COLUMNS?: number;
+  MAX_ASCII_COLUMNS?: number;
+  TARGET_CELL_CSS_PX?: number;
+  IMAGE_STAGGER_MS?: number;
+  CELL_APPEAR_MS?: number;
+  SCRAMBLE_COUNT?: number;
+  SCRAMBLE_SPEED_MS?: number;
+  REVEAL_DELAY_MS?: number;
+  BACKGROUND_COLOR?: string;
+  TEXT_COLOR?: string;
+}
+
+export interface LasciiImageEffectDefaults
+  extends Required<LasciiImageEffectOptions> {}
+
 class LasciiImageEffect {
-  static DEFAULTS = {
+  static DEFAULTS: LasciiImageEffectDefaults = {
     ASCII_CHARS: " . . . . . . :::=+xX#0369",
     FONT_SIZE: 40,
     ASPECT_WIDTH: 4,
@@ -16,19 +36,37 @@ class LasciiImageEffect {
     TEXT_COLOR: "#c8c8c8",
   };
 
-  constructor(img, index = 0, options = {}) {
+  img: HTMLImageElement;
+  index: number;
+  config: LasciiImageEffectDefaults;
+  _minAsciiColumns: number;
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  staggerDelay: number;
+  charWidth!: number;
+  charHeight!: number;
+  ASCII_ROWS!: number;
+  denseCharIndex!: number;
+  denseChars!: string[];
+  samplingImg!: HTMLImageElement;
+
+  constructor(
+    img: HTMLImageElement,
+    index = 0,
+    options: LasciiImageEffectOptions = {},
+  ) {
     this.img = img;
     this.img.style.opacity = "0";
     this.index = index;
     this.config = { ...LasciiImageEffect.DEFAULTS, ...options };
     this._minAsciiColumns = this.config.ASCII_COLUMNS;
     this.canvas = document.createElement("canvas");
-    this.ctx = this.canvas.getContext("2d");
+    this.ctx = this.canvas.getContext("2d")!;
     this.staggerDelay = this.index * this.config.IMAGE_STAGGER_MS;
     this.load();
   }
 
-  applyDisplayScaledColumns() {
+  applyDisplayScaledColumns(): void {
     const rect = this.img.getBoundingClientRect();
     const width = rect.width;
     if (width < 8) return;
@@ -41,8 +79,8 @@ class LasciiImageEffect {
     this.config.ASCII_COLUMNS = cols;
   }
 
-  measureCharacters() {
-    const measureCtx = document.createElement("canvas").getContext("2d");
+  measureCharacters(): void {
+    const measureCtx = document.createElement("canvas").getContext("2d")!;
     measureCtx.font = `${this.config.FONT_SIZE}px monospace`;
     this.charWidth = Math.ceil(measureCtx.measureText("M").width);
     this.charHeight = this.config.FONT_SIZE;
@@ -57,14 +95,14 @@ class LasciiImageEffect {
     ).split("");
   }
 
-  prepareCanvas() {
+  prepareCanvas(): void {
     this.canvas.width = this.config.ASCII_COLUMNS * this.charWidth;
     this.canvas.height = this.ASCII_ROWS * this.charHeight;
     this.ctx.font = `${this.charHeight}px monospace`;
     this.ctx.textBaseline = "top";
   }
 
-  attachCanvas() {
+  attachCanvas(): void {
     const wrapper = this.img.parentElement;
     if (wrapper) {
       this.img.style.opacity = "0";
@@ -84,7 +122,7 @@ class LasciiImageEffect {
     }
   }
 
-  load() {
+  load(): void {
     this.samplingImg = new Image();
     this.samplingImg.crossOrigin = "anonymous";
     this.samplingImg.onload = () => {
@@ -95,7 +133,7 @@ class LasciiImageEffect {
           this.prepareCanvas();
           this.attachCanvas();
           this.start();
-        } catch (error) {
+        } catch {
           this.img.style.opacity = "1";
           this.canvas.remove();
         }
@@ -111,12 +149,15 @@ class LasciiImageEffect {
     this.samplingImg.src = this.img.src;
   }
 
-  start() {
+  start(): void {
     const { asciiGrid, brightnessGrid } = this.imageToAsciiGrid();
     this.animateCells(asciiGrid, brightnessGrid);
   }
 
-  imageToAsciiGrid() {
+  imageToAsciiGrid(): {
+    asciiGrid: string[][];
+    brightnessGrid: number[][];
+  } {
     const img = this.samplingImg;
     const imageAspect = img.naturalWidth / img.naturalHeight;
     const itemAspect = this.config.ASPECT_WIDTH / this.config.ASPECT_HEIGHT;
@@ -134,7 +175,7 @@ class LasciiImageEffect {
     }
 
     const samplingCanvas = document.createElement("canvas");
-    const samplingCtx = samplingCanvas.getContext("2d");
+    const samplingCtx = samplingCanvas.getContext("2d")!;
     samplingCanvas.width = this.config.ASCII_COLUMNS;
     samplingCanvas.height = this.ASCII_ROWS;
     samplingCtx.drawImage(
@@ -155,12 +196,12 @@ class LasciiImageEffect {
       this.config.ASCII_COLUMNS,
       this.ASCII_ROWS,
     );
-    const asciiGrid = [];
-    const brightnessGrid = [];
+    const asciiGrid: string[][] = [];
+    const brightnessGrid: number[][] = [];
 
     for (let row = 0; row < this.ASCII_ROWS; row++) {
-      const asciiRow = [];
-      const brightnessRow = [];
+      const asciiRow: string[] = [];
+      const brightnessRow: number[] = [];
       for (let col = 0; col < this.config.ASCII_COLUMNS; col++) {
         const pixelIndex = (row * this.config.ASCII_COLUMNS + col) * 4;
         const brightness =
@@ -182,9 +223,12 @@ class LasciiImageEffect {
     return { asciiGrid, brightnessGrid };
   }
 
-  animateCells(asciiGrid, brightnessGrid) {
+  animateCells(
+    asciiGrid: string[][],
+    brightnessGrid: number[][],
+  ): void {
     const totalCells = this.config.ASCII_COLUMNS * this.ASCII_ROWS;
-    const scrambleState = new Array(totalCells).fill(null);
+    const scrambleState: (number | null)[] = new Array(totalCells).fill(null);
     let settledCount = 0;
 
     const cellOrder = this.shuffleArray(
@@ -236,7 +280,7 @@ class LasciiImageEffect {
     }, this.config.SCRAMBLE_SPEED_MS);
   }
 
-  drawCharacter(col, row, char) {
+  drawCharacter(col: number, row: number, char: string): void {
     this.ctx.fillStyle = this.config.BACKGROUND_COLOR;
     this.ctx.fillRect(
       col * this.charWidth,
@@ -248,11 +292,11 @@ class LasciiImageEffect {
     this.ctx.fillText(char, col * this.charWidth, row * this.charHeight);
   }
 
-  randomDenseCharacter() {
+  randomDenseCharacter(): string {
     return this.denseChars[Math.floor(Math.random() * this.denseChars.length)];
   }
 
-  revealImage() {
+  revealImage(): void {
     setTimeout(() => {
       this.canvas.style.transition = "opacity 0.5s ease";
       this.canvas.style.opacity = "0";
@@ -264,7 +308,7 @@ class LasciiImageEffect {
     }, this.config.REVEAL_DELAY_MS);
   }
 
-  shuffleArray(array) {
+  shuffleArray<T>(array: T[]): T[] {
     for (let i = array.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [array[i], array[j]] = [array[j], array[i]];
@@ -272,10 +316,10 @@ class LasciiImageEffect {
     return array;
   }
 
-  static init(selector = "[data-lascii-image]") {
+  static init(selector = "[data-lascii-image]"): void {
     const images = document.querySelectorAll(selector);
     images.forEach((img, index) => {
-      new LasciiImageEffect(img, index);
+      new LasciiImageEffect(img as HTMLImageElement, index);
     });
   }
 }
