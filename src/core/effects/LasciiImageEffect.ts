@@ -1,3 +1,10 @@
+import {
+  type LasciiErrorContext,
+  type LasciiErrorType,
+  logLasciiError,
+  toError,
+} from "../errors.js";
+
 export interface LasciiImageEffectOptions {
   ASCII_CHARS?: string;
   FONT_SIZE?: number;
@@ -41,8 +48,9 @@ class LasciiImageEffect {
   config: LasciiImageEffectDefaults;
   _minAsciiColumns: number;
   canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
+  ctx: CanvasRenderingContext2D | null;
   staggerDelay: number;
+  failed: boolean;
   charWidth!: number;
   charHeight!: number;
   ASCII_ROWS!: number;
@@ -61,9 +69,43 @@ class LasciiImageEffect {
     this.config = { ...LasciiImageEffect.DEFAULTS, ...options };
     this._minAsciiColumns = this.config.ASCII_COLUMNS;
     this.canvas = document.createElement("canvas");
-    this.ctx = this.canvas.getContext("2d")!;
+    this.ctx = this.canvas.getContext("2d");
     this.staggerDelay = this.index * this.config.IMAGE_STAGGER_MS;
+    this.failed = false;
+
+    if (!this.ctx) {
+      this.handleError(
+        "canvas_context_unavailable",
+        new Error("Unable to acquire 2d rendering context"),
+      );
+      return;
+    }
+
     this.load();
+  }
+
+  private handleError(
+    type: LasciiErrorType | string,
+    error: unknown,
+    context: LasciiErrorContext = {},
+  ): void {
+    if (this.failed) return;
+    this.failed = true;
+    logLasciiError(type, error, {
+      element: this.img,
+      config: this.config,
+      ...context,
+    });
+    this.cleanup();
+    this.fallbackToOriginal();
+  }
+
+  private cleanup(): void {
+    this.canvas.remove();
+  }
+
+  private fallbackToOriginal(): void {
+    this.img.style.opacity = "1";
   }
 
   applyDisplayScaledColumns(): void {
@@ -80,7 +122,10 @@ class LasciiImageEffect {
   }
 
   measureCharacters(): void {
-    const measureCtx = document.createElement("canvas").getContext("2d")!;
+    const measureCtx = document.createElement("canvas").getContext("2d");
+    if (!measureCtx) {
+      throw new Error("Unable to acquire 2d context for character measurement");
+    }
     measureCtx.font = `${this.config.FONT_SIZE}px monospace`;
     this.charWidth = Math.ceil(measureCtx.measureText("M").width);
     this.charHeight = this.config.FONT_SIZE;
@@ -96,6 +141,9 @@ class LasciiImageEffect {
   }
 
   prepareCanvas(): void {
+    if (!this.ctx) {
+      throw new Error("Canvas 2d context is not available");
+    }
     this.canvas.width = this.config.ASCII_COLUMNS * this.charWidth;
     this.canvas.height = this.ASCII_ROWS * this.charHeight;
     this.ctx.font = `${this.charHeight}px monospace`;
@@ -123,19 +171,21 @@ class LasciiImageEffect {
   }
 
   load(): void {
+    if (this.failed) return;
+
     this.samplingImg = new Image();
     this.samplingImg.crossOrigin = "anonymous";
     this.samplingImg.onload = () => {
       const kickoff = () => {
+        if (this.failed) return;
         try {
           this.applyDisplayScaledColumns();
           this.measureCharacters();
           this.prepareCanvas();
           this.attachCanvas();
           this.start();
-        } catch {
-          this.img.style.opacity = "1";
-          this.canvas.remove();
+        } catch (error) {
+          this.handleError("canvas_initialization_failed", error);
         }
       };
       requestAnimationFrame(() => {
@@ -143,15 +193,23 @@ class LasciiImageEffect {
       });
     };
     this.samplingImg.onerror = () => {
-      this.img.style.opacity = "1";
-      this.canvas.remove();
+      this.handleError(
+        "image_load_failed",
+        new Error("Failed to load sampling image"),
+        { src: this.img.src },
+      );
     };
     this.samplingImg.src = this.img.src;
   }
 
   start(): void {
-    const { asciiGrid, brightnessGrid } = this.imageToAsciiGrid();
-    this.animateCells(asciiGrid, brightnessGrid);
+    if (this.failed || !this.ctx) return;
+    try {
+      const { asciiGrid, brightnessGrid } = this.imageToAsciiGrid();
+      this.animateCells(asciiGrid, brightnessGrid);
+    } catch (error) {
+      this.handleError("image_animation_failed", error);
+    }
   }
 
   imageToAsciiGrid(): {
@@ -175,7 +233,10 @@ class LasciiImageEffect {
     }
 
     const samplingCanvas = document.createElement("canvas");
-    const samplingCtx = samplingCanvas.getContext("2d")!;
+    const samplingCtx = samplingCanvas.getContext("2d");
+    if (!samplingCtx) {
+      throw new Error("Unable to acquire 2d context for image sampling");
+    }
     samplingCanvas.width = this.config.ASCII_COLUMNS;
     samplingCanvas.height = this.ASCII_ROWS;
     samplingCtx.drawImage(
@@ -235,52 +296,75 @@ class LasciiImageEffect {
       Array.from({ length: totalCells }, (_, i) => i),
     );
 
-    cellOrder.forEach((cellIndex, i) => {
-      setTimeout(
-        () => {
+    let scrambleTicker: ReturnType<typeof setInterval>;
+
+    const failAnimation = (error: unknown): void => {
+      clearInterval(scrambleTicker);
+      this.handleError("image_animation_failed", toError(error));
+    };
+
+    scrambleTicker = setInterval(() => {
+      if (this.failed) {
+        clearInterval(scrambleTicker);
+        return;
+      }
+      try {
+        let stillScrambling = false;
+        for (let cellIndex = 0; cellIndex < totalCells; cellIndex++) {
+          const remaining = scrambleState[cellIndex];
+          if (remaining === null || remaining <= 0) continue;
+          stillScrambling = true;
           const row = Math.floor(cellIndex / this.config.ASCII_COLUMNS);
           const col = cellIndex % this.config.ASCII_COLUMNS;
-          const isDark = brightnessGrid[row][col] > this.denseCharIndex;
 
-          if (!isDark) {
+          if (remaining === 1) {
             this.drawCharacter(col, row, asciiGrid[row][col]);
             scrambleState[cellIndex] = 0;
             settledCount++;
             if (settledCount === totalCells) this.revealImage();
           } else {
-            scrambleState[cellIndex] = this.config.SCRAMBLE_COUNT;
+            this.drawCharacter(col, row, this.randomDenseCharacter());
+            scrambleState[cellIndex] = remaining - 1;
+          }
+        }
+        if (!stillScrambling && settledCount === totalCells) {
+          clearInterval(scrambleTicker);
+        }
+      } catch (error) {
+        failAnimation(error);
+      }
+    }, this.config.SCRAMBLE_SPEED_MS);
+
+    cellOrder.forEach((cellIndex, i) => {
+      setTimeout(
+        () => {
+          if (this.failed) return;
+          try {
+            const row = Math.floor(cellIndex / this.config.ASCII_COLUMNS);
+            const col = cellIndex % this.config.ASCII_COLUMNS;
+            const isDark = brightnessGrid[row][col] > this.denseCharIndex;
+
+            if (!isDark) {
+              this.drawCharacter(col, row, asciiGrid[row][col]);
+              scrambleState[cellIndex] = 0;
+              settledCount++;
+              if (settledCount === totalCells) this.revealImage();
+            } else {
+              scrambleState[cellIndex] = this.config.SCRAMBLE_COUNT;
+            }
+          } catch (error) {
+            failAnimation(error);
           }
         },
         this.staggerDelay + i * this.config.CELL_APPEAR_MS,
       );
     });
-
-    const scrambleTicker = setInterval(() => {
-      let stillScrambling = false;
-      for (let cellIndex = 0; cellIndex < totalCells; cellIndex++) {
-        const remaining = scrambleState[cellIndex];
-        if (remaining === null || remaining <= 0) continue;
-        stillScrambling = true;
-        const row = Math.floor(cellIndex / this.config.ASCII_COLUMNS);
-        const col = cellIndex % this.config.ASCII_COLUMNS;
-
-        if (remaining === 1) {
-          this.drawCharacter(col, row, asciiGrid[row][col]);
-          scrambleState[cellIndex] = 0;
-          settledCount++;
-          if (settledCount === totalCells) this.revealImage();
-        } else {
-          this.drawCharacter(col, row, this.randomDenseCharacter());
-          scrambleState[cellIndex] = remaining - 1;
-        }
-      }
-      if (!stillScrambling && settledCount === totalCells) {
-        clearInterval(scrambleTicker);
-      }
-    }, this.config.SCRAMBLE_SPEED_MS);
   }
 
   drawCharacter(col: number, row: number, char: string): void {
+    if (!this.ctx) {
+      throw new Error("Canvas 2d context is not available");
+    }
     this.ctx.fillStyle = this.config.BACKGROUND_COLOR;
     this.ctx.fillRect(
       col * this.charWidth,
@@ -297,7 +381,9 @@ class LasciiImageEffect {
   }
 
   revealImage(): void {
+    if (this.failed) return;
     setTimeout(() => {
+      if (this.failed) return;
       this.canvas.style.transition = "opacity 0.5s ease";
       this.canvas.style.opacity = "0";
       this.img.style.transition = "opacity 0.5s ease";
