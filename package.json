@@ -11,6 +11,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./auto": {
+      "types": "./dist/auto.d.ts",
+      "import": "./dist/auto.js",
+      "default": "./dist/auto.js"
+    },
     "./dom": {
       "types": "./dist/adapters/dom/index.d.ts",
       "import": "./dist/adapters/dom/index.js",
@@ -28,8 +33,7 @@
     }
   },
   "sideEffects": [
-    "./dist/index.js",
-    "./dist/adapters/dom/index.js"
+    "./dist/auto.js"
   ],
   "files": [
     "dist",

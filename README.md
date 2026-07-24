@@ -27,11 +27,11 @@ npm install lascii
 
 ## Usage
 
-Add `data-lascii-text` or `data-lascii-image` attributes to your elements and import the module:
+Add `data-lascii-text` or `data-lascii-image` attributes to your elements and import the auto-init entry:
 
 ```html
 <script type="module">
-  import "lascii";
+  import "lascii/auto";
 </script>
 
 <p data-lascii-text>Hello World</p>
@@ -59,7 +59,7 @@ Wrap an `<img>` with `data-lascii-image` inside a positioned container with `ove
 
 ### Configuration
 
-By default, `import "lascii"` runs `init()` on DOM ready and uses built-in defaults. To customize behavior, import the effect classes, pass an options object to the constructor (merged over `DEFAULTS`), and wire elements yourself.
+By default, `import "lascii/auto"` runs `init()` on DOM ready and uses built-in defaults. To customize behavior, import the effect classes from `lascii` (side-effect free), pass an options object to the constructor (merged over `DEFAULTS`), and wire elements yourself.
 
 See the **[API reference](./docs/API.md)** for all options, exports, and TypeScript types.
 
@@ -79,7 +79,7 @@ new LasciiTextEffect(document.querySelector(".headline"), {
 });
 ```
 
-For auto-init without importing the main entry (side effects), use subpath imports from `lascii/core/*` and call `LasciiTextEffect.init()` / `LasciiImageEffect.init()` — details in [API](./docs/API.md).
+For auto-init without pulling unused effect code into your bundle, use `import "lascii/auto"`. For manual control, use `lascii/core/*` and call `.init()` yourself — details in [API](./docs/API.md).
 
 ## TypeScript
 
