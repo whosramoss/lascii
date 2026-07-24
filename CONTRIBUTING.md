@@ -13,7 +13,7 @@ Thank you for your interest in contributing. This project is a small, focused li
    npm run dev
    ```
 
-3. The library source lives in `src/` at the repository root. The `www/` folder is a Vite demo and is **not** published to npm.
+3. The library source lives in `src/` at the repository root. Only `dist/`, `docs/`, and `CHANGELOG.md` are published to npm — `src/` and `www/` are **not** included in the package.
 
 ## Development workflow
 
@@ -52,7 +52,7 @@ docs: clarify image wrapper requirements in API
 
 - One logical change per PR when possible.
 - Do not include unrelated formatting or drive-by refactors.
-- Ensure `npm pack --dry-run` still lists only intended files (`src/`, docs ship via `files` in `package.json`).
+- Ensure `npm pack --dry-run` still lists only intended files (`dist/`, `docs/`, and `CHANGELOG.md` via `files` in `package.json`).
 
 ## Questions
 
