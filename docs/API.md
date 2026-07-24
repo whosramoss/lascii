@@ -4,12 +4,13 @@
 
 | Import | Description |
 | ------ | ----------- |
-| `lascii` | Main entry. Auto-initializes on `DOMContentLoaded` via `autoInitDom()`. |
-| `lascii/dom` | Same exports as main, but scoped to the DOM adapter (also auto-inits on import). |
-| `lascii/core/text` | `LasciiTextEffect` only (no auto-init). |
-| `lascii/core/image` | `LasciiImageEffect` only (no auto-init). |
+| `lascii` | Main entry. Side-effect free; exports classes and `init` / `autoInitDom`. |
+| `lascii/auto` | Auto-initializes on `DOMContentLoaded` via `autoInitDom()` (side-effectful). |
+| `lascii/dom` | DOM adapter exports (`LasciiTextEffect`, `LasciiImageEffect`, `initDom`, `autoInitDom`). Side-effect free. |
+| `lascii/core/text` | `LasciiTextEffect` only. |
+| `lascii/core/image` | `LasciiImageEffect` only. |
 
-Use `lascii/core/*` when you want full control and no side effects on import.
+Use `lascii` or `lascii/core/*` when you want full control and no side effects on import. Use `lascii/auto` for declarative `data-lascii-*` setup.
 
 ---
 
@@ -41,7 +42,20 @@ import lascii, {
 
 `autoInitDom()` calls `init()` when the document is ready.
 
-To avoid auto-init on import, use subpath imports:
+Importing `lascii` does **not** call `autoInitDom()` automatically. For declarative setup:
+
+```js
+import "lascii/auto";
+```
+
+Or call it yourself:
+
+```js
+import { autoInitDom } from "lascii";
+autoInitDom();
+```
+
+To import a single effect with maximum tree shaking:
 
 ```js
 import { LasciiTextEffect } from "lascii/core/text";
@@ -219,32 +233,32 @@ document.querySelectorAll("[data-lascii-image]").forEach((img, index) => {
 
 ```html
 <script type="module">
-  import "lascii";
+  import "lascii/auto";
 </script>
 ```
 
-### Manual init (no constructor side effects until you call `init`)
+### Manual init (side-effect free)
 
 ```js
 import { LasciiImageEffect, LasciiTextEffect, init } from "lascii";
 
-// If you imported from "lascii", autoInitDom may already have run.
-// Prefer core/* subpaths to avoid double init:
+init();
+```
 
+Or with maximum tree shaking:
+
+```js
 import LasciiTextEffect from "lascii/core/text";
 import LasciiImageEffect from "lascii/core/image";
-import { initDom } from "lascii/dom"; // note: lascii/dom still auto-inits on import
+import { initDom } from "lascii/dom";
 
 initDom();
 ```
 
-To import DOM helpers without auto-init, import from `initDom` via a future dedicated export or duplicate `initDom` in your bundle by importing only from `lascii/core/*` and calling `.init()` yourself.
-
 ### Tree-shaking / side effects
 
-`package.json` marks these as side-effectful:
+Only `./dist/auto.js` is marked as side-effectful in `package.json`. All other entry points are tree-shakeable:
 
-- `./src/index.js`
-- `./src/adapters/dom/index.js`
-
-Bundlers will not drop them if imported. Use `lascii/core/text` and `lascii/core/image` for side-effect-free imports.
+- `import { LasciiTextEffect } from "lascii"` — can drop unused image code
+- `import from "lascii/core/text"` — text effect only
+- `import "lascii/auto"` — keeps the auto-init side effect (intentional)

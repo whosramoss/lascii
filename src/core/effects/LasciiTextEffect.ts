@@ -1,3 +1,10 @@
+import { type Disposable, ResourceTracker } from "../disposable.js";
+import {
+  type LasciiErrorContext,
+  type LasciiErrorType,
+  logLasciiError,
+} from "../errors.js";
+
 export type RevealOriginValue = "start" | "middle";
 
 export interface LasciiTextEffectOptions {
@@ -23,7 +30,7 @@ interface QueueItem {
   char: string;
 }
 
-class LasciiTextEffect {
+class LasciiTextEffect implements Disposable {
   static RevealOrigin = Object.freeze({
     START: "start",
     MIDDLE: "middle",
@@ -51,10 +58,13 @@ class LasciiTextEffect {
   frameRequest: number | null;
   resolve: (() => void) | null;
   safetyTimeout: ReturnType<typeof setTimeout> | null;
+  phraseTimeout: ReturnType<typeof setTimeout> | null;
   rawText: string;
   phrases: string[];
   shouldLoop: boolean;
   counter: number;
+  failed: boolean;
+  private readonly tracker = new ResourceTracker();
 
   constructor(element: HTMLElement, options: LasciiTextEffectOptions = {}) {
     this.el = element;
@@ -64,12 +74,77 @@ class LasciiTextEffect {
     this.frameRequest = null;
     this.resolve = null;
     this.safetyTimeout = null;
+    this.phraseTimeout = null;
     this.rawText = (this.el.textContent ?? "").trim();
-    this.phrases = this.extractPhrases();
-    this.shouldLoop = this.rawText.includes(this.config.separator);
+    this.phrases = [];
+    this.shouldLoop = false;
     this.counter = 0;
-    this.clearInitialText();
-    this.start();
+    this.failed = false;
+
+    this.tracker.track(() => this.stopActiveWork());
+
+    try {
+      this.phrases = this.extractPhrases();
+      this.shouldLoop = this.rawText.includes(this.config.separator);
+      this.clearInitialText();
+      this.start();
+    } catch (error) {
+      this.handleError("text_effect_initialization_failed", error);
+    }
+  }
+
+  get disposed(): boolean {
+    return this.tracker.isDisposed;
+  }
+
+  dispose(): void {
+    if (this.tracker.isDisposed) return;
+    this.failed = true;
+    this.tracker.dispose();
+  }
+
+  private ensureNotDisposed(): void {
+    if (this.tracker.isDisposed) {
+      throw new Error("LasciiTextEffect has been disposed");
+    }
+  }
+
+  private handleError(
+    type: LasciiErrorType | string,
+    error: unknown,
+    context: LasciiErrorContext = {},
+  ): void {
+    if (this.failed || this.tracker.isDisposed) return;
+    this.failed = true;
+    logLasciiError(type, error, {
+      element: this.el,
+      config: this.config,
+      ...context,
+    });
+    this.stopActiveWork();
+    this.fallbackToOriginal();
+  }
+
+  private stopActiveWork(): void {
+    if (this.frameRequest !== null) {
+      cancelAnimationFrame(this.frameRequest);
+      this.frameRequest = null;
+    }
+    if (this.safetyTimeout !== null) {
+      clearTimeout(this.safetyTimeout);
+      this.safetyTimeout = null;
+    }
+    if (this.phraseTimeout !== null) {
+      clearTimeout(this.phraseTimeout);
+      this.phraseTimeout = null;
+    }
+    this.resolve?.();
+    this.resolve = null;
+  }
+
+  private fallbackToOriginal(): void {
+    const fallbackText = this.phrases[0] ?? this.rawText;
+    this.el.textContent = fallbackText;
   }
 
   extractPhrases(): string[] {
@@ -84,7 +159,8 @@ class LasciiTextEffect {
   }
 
   start(): void {
-    if (!this.phrases.length) return;
+    this.ensureNotDisposed();
+    if (this.failed || !this.phrases.length) return;
     if (this.shouldLoop) {
       this.displayNextPhrase();
     } else {
@@ -93,9 +169,13 @@ class LasciiTextEffect {
   }
 
   displayNextPhrase(): void {
+    if (this.failed || this.tracker.isDisposed) return;
     const currentPhrase = this.phrases[this.counter];
     this.setText(currentPhrase).then(() => {
-      setTimeout(() => {
+      if (this.failed || this.tracker.isDisposed) return;
+      this.phraseTimeout = setTimeout(() => {
+        this.phraseTimeout = null;
+        if (this.failed || this.tracker.isDisposed) return;
         this.updateCounter();
         this.displayNextPhrase();
       }, this.config.phraseDelay);
@@ -107,24 +187,36 @@ class LasciiTextEffect {
   }
 
   setText(newText: string): Promise<void> {
-    const oldText = this.el.innerText;
-    const length = Math.max(oldText.length, newText.length);
-    const promise = new Promise<void>((resolve) => {
-      this.resolve = resolve;
-    });
-    this.queue = this.buildQueue(oldText, newText, length);
-    this.resetAnimation();
+    this.ensureNotDisposed();
+    if (this.failed) {
+      return Promise.resolve();
+    }
 
-    this.safetyTimeout = setTimeout(() => {
-      if (this.frameRequest) {
-        cancelAnimationFrame(this.frameRequest);
-        this.frameRequest = null;
-        this.el.textContent = newText;
-        this.resolve?.();
-      }
-    }, 3000);
+    try {
+      const oldText = this.el.innerText;
+      const length = Math.max(oldText.length, newText.length);
+      const promise = new Promise<void>((resolve) => {
+        this.resolve = resolve;
+      });
+      this.queue = this.buildQueue(oldText, newText, length);
+      this.resetAnimation();
 
-    return promise;
+      this.safetyTimeout = setTimeout(() => {
+        this.safetyTimeout = null;
+        if (this.frameRequest) {
+          cancelAnimationFrame(this.frameRequest);
+          this.frameRequest = null;
+          this.el.textContent = newText;
+          this.resolve?.();
+          this.resolve = null;
+        }
+      }, 3000);
+
+      return promise;
+    } catch (error) {
+      this.handleError("text_effect_animation_failed", error, { newText });
+      return Promise.resolve();
+    }
   }
 
   buildQueue(oldText: string, newText: string, length: number): QueueItem[] {
@@ -158,53 +250,66 @@ class LasciiTextEffect {
   }
 
   resetAnimation(): void {
-    cancelAnimationFrame(this.frameRequest!);
+    if (this.frameRequest !== null) {
+      cancelAnimationFrame(this.frameRequest);
+      this.frameRequest = null;
+    }
     this.frame = 0;
     this.update();
   }
 
   update = (): void => {
-    let output = "";
-    let complete = 0;
-    for (let i = 0; i < this.queue.length; i++) {
-      const item = this.queue[i];
-      const { from, to, start, end } = item;
-      let char = item.char;
-      if (this.frame >= end) {
-        complete++;
-        output += to;
-      } else if (this.frame >= start) {
-        const local = this.frame - start;
-        const intro = this.config.introChars ?? "";
-        const introPhase = this.config.introPhaseFrames ?? 10;
-        if (intro.length && local < introPhase) {
-          const last = intro.length - 1;
-          const idx =
-            last <= 0
-              ? 0
-              : Math.min(
-                  last,
-                  Math.floor((local / Math.max(introPhase - 1, 1)) * last),
-                );
-          char = intro[idx];
-          this.queue[i].char = char;
-        } else if (!char || Math.random() < this.config.randomCharChance) {
-          char = this.randomChar();
-          this.queue[i].char = char;
+    if (this.failed || this.tracker.isDisposed) return;
+
+    try {
+      let output = "";
+      let complete = 0;
+      for (let i = 0; i < this.queue.length; i++) {
+        const item = this.queue[i];
+        const { from, to, start, end } = item;
+        let char = item.char;
+        if (this.frame >= end) {
+          complete++;
+          output += to;
+        } else if (this.frame >= start) {
+          const local = this.frame - start;
+          const intro = this.config.introChars ?? "";
+          const introPhase = this.config.introPhaseFrames ?? 10;
+          if (intro.length && local < introPhase) {
+            const last = intro.length - 1;
+            const idx =
+              last <= 0
+                ? 0
+                : Math.min(
+                    last,
+                    Math.floor((local / Math.max(introPhase - 1, 1)) * last),
+                  );
+            char = intro[idx];
+            this.queue[i].char = char;
+          } else if (!char || Math.random() < this.config.randomCharChance) {
+            char = this.randomChar();
+            this.queue[i].char = char;
+          }
+          output += `<span class="dud">${char}</span>`;
+        } else {
+          output += from;
         }
-        output += `<span class="dud">${char}</span>`;
-      } else {
-        output += from;
       }
-    }
-    this.el.innerHTML = output;
-    if (complete === this.queue.length) {
-      this.el.textContent = this.queue.map((item) => item.to).join("");
-      clearTimeout(this.safetyTimeout!);
-      this.resolve?.();
-    } else {
-      this.frameRequest = requestAnimationFrame(this.update);
-      this.frame++;
+      this.el.innerHTML = output;
+      if (complete === this.queue.length) {
+        this.el.textContent = this.queue.map((item) => item.to).join("");
+        if (this.safetyTimeout !== null) {
+          clearTimeout(this.safetyTimeout);
+          this.safetyTimeout = null;
+        }
+        this.resolve?.();
+        this.resolve = null;
+      } else {
+        this.frameRequest = requestAnimationFrame(this.update);
+        this.frame++;
+      }
+    } catch (error) {
+      this.handleError("text_effect_animation_failed", error);
     }
   };
 
@@ -214,11 +319,12 @@ class LasciiTextEffect {
     ];
   }
 
-  static init(selector = "[data-lascii-text]"): void {
+  static init(selector = "[data-lascii-text]"): LasciiTextEffect[] {
     const elements = document.querySelectorAll(selector);
-    elements.forEach((element) => {
-      new LasciiTextEffect(element as HTMLElement);
-    });
+    return Array.from(
+      elements,
+      (element) => new LasciiTextEffect(element as HTMLElement),
+    );
   }
 }
 

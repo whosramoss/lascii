@@ -1,3 +1,11 @@
+import { type Disposable, ResourceTracker } from "../disposable.js";
+import {
+  type LasciiErrorContext,
+  type LasciiErrorType,
+  logLasciiError,
+  toError,
+} from "../errors.js";
+
 export interface LasciiImageEffectOptions {
   ASCII_CHARS?: string;
   FONT_SIZE?: number;
@@ -18,7 +26,7 @@ export interface LasciiImageEffectOptions {
 export interface LasciiImageEffectDefaults
   extends Required<LasciiImageEffectOptions> {}
 
-class LasciiImageEffect {
+class LasciiImageEffect implements Disposable {
   static DEFAULTS: LasciiImageEffectDefaults = {
     ASCII_CHARS: " . . . . . . :::=+xX#0369",
     FONT_SIZE: 40,
@@ -41,14 +49,18 @@ class LasciiImageEffect {
   config: LasciiImageEffectDefaults;
   _minAsciiColumns: number;
   canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
+  ctx: CanvasRenderingContext2D | null;
   staggerDelay: number;
+  failed: boolean;
   charWidth!: number;
   charHeight!: number;
   ASCII_ROWS!: number;
   denseCharIndex!: number;
   denseChars!: string[];
   samplingImg!: HTMLImageElement;
+  private readonly tracker = new ResourceTracker();
+  private readonly activeTimeouts: Array<ReturnType<typeof setTimeout>> = [];
+  private scrambleTicker: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     img: HTMLImageElement,
@@ -61,9 +73,107 @@ class LasciiImageEffect {
     this.config = { ...LasciiImageEffect.DEFAULTS, ...options };
     this._minAsciiColumns = this.config.ASCII_COLUMNS;
     this.canvas = document.createElement("canvas");
-    this.ctx = this.canvas.getContext("2d")!;
+    this.ctx = this.canvas.getContext("2d");
     this.staggerDelay = this.index * this.config.IMAGE_STAGGER_MS;
+    this.failed = false;
+
+    this.tracker.track(() => {
+      this.clearTimers();
+      this.canvas.remove();
+      this.clearSamplingImage();
+    });
+
+    if (!this.ctx) {
+      this.handleError(
+        "canvas_context_unavailable",
+        new Error("Unable to acquire 2d rendering context"),
+      );
+      return;
+    }
+
     this.load();
+  }
+
+  get disposed(): boolean {
+    return this.tracker.isDisposed;
+  }
+
+  dispose(): void {
+    if (this.tracker.isDisposed) return;
+    this.failed = true;
+    this.tracker.dispose();
+    this.img.style.opacity = "1";
+  }
+
+  private ensureNotDisposed(): void {
+    if (this.tracker.isDisposed) {
+      throw new Error("LasciiImageEffect has been disposed");
+    }
+  }
+
+  private clearSamplingImage(): void {
+    if (!this.samplingImg) return;
+    this.samplingImg.onload = null;
+    this.samplingImg.onerror = null;
+    this.samplingImg.src = "";
+  }
+
+  private clearTimers(): void {
+    for (const id of this.activeTimeouts) {
+      clearTimeout(id);
+    }
+    this.activeTimeouts.length = 0;
+    if (this.scrambleTicker !== null) {
+      clearInterval(this.scrambleTicker);
+      this.scrambleTicker = null;
+    }
+  }
+
+  private trackTimeout(
+    handler: () => void,
+    delay: number,
+  ): ReturnType<typeof setTimeout> {
+    const id = setTimeout(() => {
+      const index = this.activeTimeouts.indexOf(id);
+      if (index >= 0) this.activeTimeouts.splice(index, 1);
+      handler();
+    }, delay);
+    this.activeTimeouts.push(id);
+    return id;
+  }
+
+  private trackAnimationFrame(handler: FrameRequestCallback): number {
+    const id = requestAnimationFrame((time) => {
+      handler(time);
+    });
+    this.tracker.track(() => cancelAnimationFrame(id));
+    return id;
+  }
+
+  private handleError(
+    type: LasciiErrorType | string,
+    error: unknown,
+    context: LasciiErrorContext = {},
+  ): void {
+    if (this.failed || this.tracker.isDisposed) return;
+    this.failed = true;
+    logLasciiError(type, error, {
+      element: this.img,
+      config: this.config,
+      ...context,
+    });
+    this.clearTimers();
+    this.cleanup();
+    this.fallbackToOriginal();
+  }
+
+  private cleanup(): void {
+    this.canvas.remove();
+    this.clearSamplingImage();
+  }
+
+  private fallbackToOriginal(): void {
+    this.img.style.opacity = "1";
   }
 
   applyDisplayScaledColumns(): void {
@@ -80,7 +190,10 @@ class LasciiImageEffect {
   }
 
   measureCharacters(): void {
-    const measureCtx = document.createElement("canvas").getContext("2d")!;
+    const measureCtx = document.createElement("canvas").getContext("2d");
+    if (!measureCtx) {
+      throw new Error("Unable to acquire 2d context for character measurement");
+    }
     measureCtx.font = `${this.config.FONT_SIZE}px monospace`;
     this.charWidth = Math.ceil(measureCtx.measureText("M").width);
     this.charHeight = this.config.FONT_SIZE;
@@ -96,6 +209,9 @@ class LasciiImageEffect {
   }
 
   prepareCanvas(): void {
+    if (!this.ctx) {
+      throw new Error("Canvas 2d context is not available");
+    }
     this.canvas.width = this.config.ASCII_COLUMNS * this.charWidth;
     this.canvas.height = this.ASCII_ROWS * this.charHeight;
     this.ctx.font = `${this.charHeight}px monospace`;
@@ -123,35 +239,47 @@ class LasciiImageEffect {
   }
 
   load(): void {
+    if (this.failed || this.tracker.isDisposed) return;
+
     this.samplingImg = new Image();
     this.samplingImg.crossOrigin = "anonymous";
     this.samplingImg.onload = () => {
-      const kickoff = () => {
-        try {
-          this.applyDisplayScaledColumns();
-          this.measureCharacters();
-          this.prepareCanvas();
-          this.attachCanvas();
-          this.start();
-        } catch {
-          this.img.style.opacity = "1";
-          this.canvas.remove();
-        }
-      };
-      requestAnimationFrame(() => {
-        requestAnimationFrame(kickoff);
+      if (this.failed || this.tracker.isDisposed) return;
+      this.trackAnimationFrame(() => {
+        if (this.failed || this.tracker.isDisposed) return;
+        this.trackAnimationFrame(() => {
+          if (this.failed || this.tracker.isDisposed) return;
+          try {
+            this.applyDisplayScaledColumns();
+            this.measureCharacters();
+            this.prepareCanvas();
+            this.attachCanvas();
+            this.start();
+          } catch (error) {
+            this.handleError("canvas_initialization_failed", error);
+          }
+        });
       });
     };
     this.samplingImg.onerror = () => {
-      this.img.style.opacity = "1";
-      this.canvas.remove();
+      this.handleError(
+        "image_load_failed",
+        new Error("Failed to load sampling image"),
+        { src: this.img.src },
+      );
     };
     this.samplingImg.src = this.img.src;
   }
 
   start(): void {
-    const { asciiGrid, brightnessGrid } = this.imageToAsciiGrid();
-    this.animateCells(asciiGrid, brightnessGrid);
+    this.ensureNotDisposed();
+    if (this.failed || !this.ctx) return;
+    try {
+      const { asciiGrid, brightnessGrid } = this.imageToAsciiGrid();
+      this.animateCells(asciiGrid, brightnessGrid);
+    } catch (error) {
+      this.handleError("image_animation_failed", error);
+    }
   }
 
   imageToAsciiGrid(): {
@@ -175,7 +303,10 @@ class LasciiImageEffect {
     }
 
     const samplingCanvas = document.createElement("canvas");
-    const samplingCtx = samplingCanvas.getContext("2d")!;
+    const samplingCtx = samplingCanvas.getContext("2d");
+    if (!samplingCtx) {
+      throw new Error("Unable to acquire 2d context for image sampling");
+    }
     samplingCanvas.width = this.config.ASCII_COLUMNS;
     samplingCanvas.height = this.ASCII_ROWS;
     samplingCtx.drawImage(
@@ -235,9 +366,50 @@ class LasciiImageEffect {
       Array.from({ length: totalCells }, (_, i) => i),
     );
 
+    const failAnimation = (error: unknown): void => {
+      this.clearTimers();
+      this.handleError("image_animation_failed", toError(error));
+    };
+
+    this.scrambleTicker = setInterval(() => {
+      if (this.failed || this.tracker.isDisposed) {
+        this.clearTimers();
+        return;
+      }
+      try {
+        let stillScrambling = false;
+        for (let cellIndex = 0; cellIndex < totalCells; cellIndex++) {
+          const remaining = scrambleState[cellIndex];
+          if (remaining === null || remaining <= 0) continue;
+          stillScrambling = true;
+          const row = Math.floor(cellIndex / this.config.ASCII_COLUMNS);
+          const col = cellIndex % this.config.ASCII_COLUMNS;
+
+          if (remaining === 1) {
+            this.drawCharacter(col, row, asciiGrid[row][col]);
+            scrambleState[cellIndex] = 0;
+            settledCount++;
+            if (settledCount === totalCells) this.revealImage();
+          } else {
+            this.drawCharacter(col, row, this.randomDenseCharacter());
+            scrambleState[cellIndex] = remaining - 1;
+          }
+        }
+        if (!stillScrambling && settledCount === totalCells) {
+          if (this.scrambleTicker !== null) {
+            clearInterval(this.scrambleTicker);
+            this.scrambleTicker = null;
+          }
+        }
+      } catch (error) {
+        failAnimation(error);
+      }
+    }, this.config.SCRAMBLE_SPEED_MS);
+
     cellOrder.forEach((cellIndex, i) => {
-      setTimeout(
-        () => {
+      this.trackTimeout(() => {
+        if (this.failed || this.tracker.isDisposed) return;
+        try {
           const row = Math.floor(cellIndex / this.config.ASCII_COLUMNS);
           const col = cellIndex % this.config.ASCII_COLUMNS;
           const isDark = brightnessGrid[row][col] > this.denseCharIndex;
@@ -250,37 +422,17 @@ class LasciiImageEffect {
           } else {
             scrambleState[cellIndex] = this.config.SCRAMBLE_COUNT;
           }
-        },
-        this.staggerDelay + i * this.config.CELL_APPEAR_MS,
-      );
-    });
-
-    const scrambleTicker = setInterval(() => {
-      let stillScrambling = false;
-      for (let cellIndex = 0; cellIndex < totalCells; cellIndex++) {
-        const remaining = scrambleState[cellIndex];
-        if (remaining === null || remaining <= 0) continue;
-        stillScrambling = true;
-        const row = Math.floor(cellIndex / this.config.ASCII_COLUMNS);
-        const col = cellIndex % this.config.ASCII_COLUMNS;
-
-        if (remaining === 1) {
-          this.drawCharacter(col, row, asciiGrid[row][col]);
-          scrambleState[cellIndex] = 0;
-          settledCount++;
-          if (settledCount === totalCells) this.revealImage();
-        } else {
-          this.drawCharacter(col, row, this.randomDenseCharacter());
-          scrambleState[cellIndex] = remaining - 1;
+        } catch (error) {
+          failAnimation(error);
         }
-      }
-      if (!stillScrambling && settledCount === totalCells) {
-        clearInterval(scrambleTicker);
-      }
-    }, this.config.SCRAMBLE_SPEED_MS);
+      }, this.staggerDelay + i * this.config.CELL_APPEAR_MS);
+    });
   }
 
   drawCharacter(col: number, row: number, char: string): void {
+    if (!this.ctx) {
+      throw new Error("Canvas 2d context is not available");
+    }
     this.ctx.fillStyle = this.config.BACKGROUND_COLOR;
     this.ctx.fillRect(
       col * this.charWidth,
@@ -297,12 +449,14 @@ class LasciiImageEffect {
   }
 
   revealImage(): void {
-    setTimeout(() => {
+    if (this.failed || this.tracker.isDisposed) return;
+    this.trackTimeout(() => {
+      if (this.failed || this.tracker.isDisposed) return;
       this.canvas.style.transition = "opacity 0.5s ease";
       this.canvas.style.opacity = "0";
       this.img.style.transition = "opacity 0.5s ease";
       this.img.style.opacity = "1";
-      setTimeout(() => {
+      this.trackTimeout(() => {
         this.canvas.remove();
       }, 500);
     }, this.config.REVEAL_DELAY_MS);
@@ -316,11 +470,12 @@ class LasciiImageEffect {
     return array;
   }
 
-  static init(selector = "[data-lascii-image]"): void {
+  static init(selector = "[data-lascii-image]"): LasciiImageEffect[] {
     const images = document.querySelectorAll(selector);
-    images.forEach((img, index) => {
-      new LasciiImageEffect(img as HTMLImageElement, index);
-    });
+    return Array.from(
+      images,
+      (img, index) => new LasciiImageEffect(img as HTMLImageElement, index),
+    );
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "lascii",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Lightweight ASCII animation effects for the web",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,6 +10,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./auto": {
+      "types": "./dist/auto.d.ts",
+      "import": "./dist/auto.js",
+      "default": "./dist/auto.js"
     },
     "./dom": {
       "types": "./dist/adapters/dom/index.d.ts",
@@ -28,8 +33,7 @@
     }
   },
   "sideEffects": [
-    "./dist/index.js",
-    "./dist/adapters/dom/index.js"
+    "./dist/auto.js"
   ],
   "files": [
     "dist",
