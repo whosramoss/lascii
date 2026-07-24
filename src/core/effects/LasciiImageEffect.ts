@@ -1,3 +1,4 @@
+import { type Disposable, ResourceTracker } from "../disposable.js";
 import {
   type LasciiErrorContext,
   type LasciiErrorType,
@@ -25,7 +26,7 @@ export interface LasciiImageEffectOptions {
 export interface LasciiImageEffectDefaults
   extends Required<LasciiImageEffectOptions> {}
 
-class LasciiImageEffect {
+class LasciiImageEffect implements Disposable {
   static DEFAULTS: LasciiImageEffectDefaults = {
     ASCII_CHARS: " . . . . . . :::=+xX#0369",
     FONT_SIZE: 40,
@@ -57,6 +58,9 @@ class LasciiImageEffect {
   denseCharIndex!: number;
   denseChars!: string[];
   samplingImg!: HTMLImageElement;
+  private readonly tracker = new ResourceTracker();
+  private readonly activeTimeouts: Array<ReturnType<typeof setTimeout>> = [];
+  private scrambleTicker: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     img: HTMLImageElement,
@@ -73,6 +77,12 @@ class LasciiImageEffect {
     this.staggerDelay = this.index * this.config.IMAGE_STAGGER_MS;
     this.failed = false;
 
+    this.tracker.track(() => {
+      this.clearTimers();
+      this.canvas.remove();
+      this.clearSamplingImage();
+    });
+
     if (!this.ctx) {
       this.handleError(
         "canvas_context_unavailable",
@@ -84,24 +94,82 @@ class LasciiImageEffect {
     this.load();
   }
 
+  get disposed(): boolean {
+    return this.tracker.isDisposed;
+  }
+
+  dispose(): void {
+    if (this.tracker.isDisposed) return;
+    this.failed = true;
+    this.tracker.dispose();
+    this.img.style.opacity = "1";
+  }
+
+  private ensureNotDisposed(): void {
+    if (this.tracker.isDisposed) {
+      throw new Error("LasciiImageEffect has been disposed");
+    }
+  }
+
+  private clearSamplingImage(): void {
+    if (!this.samplingImg) return;
+    this.samplingImg.onload = null;
+    this.samplingImg.onerror = null;
+    this.samplingImg.src = "";
+  }
+
+  private clearTimers(): void {
+    for (const id of this.activeTimeouts) {
+      clearTimeout(id);
+    }
+    this.activeTimeouts.length = 0;
+    if (this.scrambleTicker !== null) {
+      clearInterval(this.scrambleTicker);
+      this.scrambleTicker = null;
+    }
+  }
+
+  private trackTimeout(
+    handler: () => void,
+    delay: number,
+  ): ReturnType<typeof setTimeout> {
+    const id = setTimeout(() => {
+      const index = this.activeTimeouts.indexOf(id);
+      if (index >= 0) this.activeTimeouts.splice(index, 1);
+      handler();
+    }, delay);
+    this.activeTimeouts.push(id);
+    return id;
+  }
+
+  private trackAnimationFrame(handler: FrameRequestCallback): number {
+    const id = requestAnimationFrame((time) => {
+      handler(time);
+    });
+    this.tracker.track(() => cancelAnimationFrame(id));
+    return id;
+  }
+
   private handleError(
     type: LasciiErrorType | string,
     error: unknown,
     context: LasciiErrorContext = {},
   ): void {
-    if (this.failed) return;
+    if (this.failed || this.tracker.isDisposed) return;
     this.failed = true;
     logLasciiError(type, error, {
       element: this.img,
       config: this.config,
       ...context,
     });
+    this.clearTimers();
     this.cleanup();
     this.fallbackToOriginal();
   }
 
   private cleanup(): void {
     this.canvas.remove();
+    this.clearSamplingImage();
   }
 
   private fallbackToOriginal(): void {
@@ -171,25 +239,26 @@ class LasciiImageEffect {
   }
 
   load(): void {
-    if (this.failed) return;
+    if (this.failed || this.tracker.isDisposed) return;
 
     this.samplingImg = new Image();
     this.samplingImg.crossOrigin = "anonymous";
     this.samplingImg.onload = () => {
-      const kickoff = () => {
-        if (this.failed) return;
-        try {
-          this.applyDisplayScaledColumns();
-          this.measureCharacters();
-          this.prepareCanvas();
-          this.attachCanvas();
-          this.start();
-        } catch (error) {
-          this.handleError("canvas_initialization_failed", error);
-        }
-      };
-      requestAnimationFrame(() => {
-        requestAnimationFrame(kickoff);
+      if (this.failed || this.tracker.isDisposed) return;
+      this.trackAnimationFrame(() => {
+        if (this.failed || this.tracker.isDisposed) return;
+        this.trackAnimationFrame(() => {
+          if (this.failed || this.tracker.isDisposed) return;
+          try {
+            this.applyDisplayScaledColumns();
+            this.measureCharacters();
+            this.prepareCanvas();
+            this.attachCanvas();
+            this.start();
+          } catch (error) {
+            this.handleError("canvas_initialization_failed", error);
+          }
+        });
       });
     };
     this.samplingImg.onerror = () => {
@@ -203,6 +272,7 @@ class LasciiImageEffect {
   }
 
   start(): void {
+    this.ensureNotDisposed();
     if (this.failed || !this.ctx) return;
     try {
       const { asciiGrid, brightnessGrid } = this.imageToAsciiGrid();
@@ -296,16 +366,14 @@ class LasciiImageEffect {
       Array.from({ length: totalCells }, (_, i) => i),
     );
 
-    let scrambleTicker: ReturnType<typeof setInterval>;
-
     const failAnimation = (error: unknown): void => {
-      clearInterval(scrambleTicker);
+      this.clearTimers();
       this.handleError("image_animation_failed", toError(error));
     };
 
-    scrambleTicker = setInterval(() => {
-      if (this.failed) {
-        clearInterval(scrambleTicker);
+    this.scrambleTicker = setInterval(() => {
+      if (this.failed || this.tracker.isDisposed) {
+        this.clearTimers();
         return;
       }
       try {
@@ -328,7 +396,10 @@ class LasciiImageEffect {
           }
         }
         if (!stillScrambling && settledCount === totalCells) {
-          clearInterval(scrambleTicker);
+          if (this.scrambleTicker !== null) {
+            clearInterval(this.scrambleTicker);
+            this.scrambleTicker = null;
+          }
         }
       } catch (error) {
         failAnimation(error);
@@ -336,28 +407,25 @@ class LasciiImageEffect {
     }, this.config.SCRAMBLE_SPEED_MS);
 
     cellOrder.forEach((cellIndex, i) => {
-      setTimeout(
-        () => {
-          if (this.failed) return;
-          try {
-            const row = Math.floor(cellIndex / this.config.ASCII_COLUMNS);
-            const col = cellIndex % this.config.ASCII_COLUMNS;
-            const isDark = brightnessGrid[row][col] > this.denseCharIndex;
+      this.trackTimeout(() => {
+        if (this.failed || this.tracker.isDisposed) return;
+        try {
+          const row = Math.floor(cellIndex / this.config.ASCII_COLUMNS);
+          const col = cellIndex % this.config.ASCII_COLUMNS;
+          const isDark = brightnessGrid[row][col] > this.denseCharIndex;
 
-            if (!isDark) {
-              this.drawCharacter(col, row, asciiGrid[row][col]);
-              scrambleState[cellIndex] = 0;
-              settledCount++;
-              if (settledCount === totalCells) this.revealImage();
-            } else {
-              scrambleState[cellIndex] = this.config.SCRAMBLE_COUNT;
-            }
-          } catch (error) {
-            failAnimation(error);
+          if (!isDark) {
+            this.drawCharacter(col, row, asciiGrid[row][col]);
+            scrambleState[cellIndex] = 0;
+            settledCount++;
+            if (settledCount === totalCells) this.revealImage();
+          } else {
+            scrambleState[cellIndex] = this.config.SCRAMBLE_COUNT;
           }
-        },
-        this.staggerDelay + i * this.config.CELL_APPEAR_MS,
-      );
+        } catch (error) {
+          failAnimation(error);
+        }
+      }, this.staggerDelay + i * this.config.CELL_APPEAR_MS);
     });
   }
 
@@ -381,14 +449,14 @@ class LasciiImageEffect {
   }
 
   revealImage(): void {
-    if (this.failed) return;
-    setTimeout(() => {
-      if (this.failed) return;
+    if (this.failed || this.tracker.isDisposed) return;
+    this.trackTimeout(() => {
+      if (this.failed || this.tracker.isDisposed) return;
       this.canvas.style.transition = "opacity 0.5s ease";
       this.canvas.style.opacity = "0";
       this.img.style.transition = "opacity 0.5s ease";
       this.img.style.opacity = "1";
-      setTimeout(() => {
+      this.trackTimeout(() => {
         this.canvas.remove();
       }, 500);
     }, this.config.REVEAL_DELAY_MS);
@@ -402,11 +470,12 @@ class LasciiImageEffect {
     return array;
   }
 
-  static init(selector = "[data-lascii-image]"): void {
+  static init(selector = "[data-lascii-image]"): LasciiImageEffect[] {
     const images = document.querySelectorAll(selector);
-    images.forEach((img, index) => {
-      new LasciiImageEffect(img as HTMLImageElement, index);
-    });
+    return Array.from(
+      images,
+      (img, index) => new LasciiImageEffect(img as HTMLImageElement, index),
+    );
   }
 }
 

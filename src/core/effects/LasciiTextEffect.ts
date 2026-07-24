@@ -1,3 +1,4 @@
+import { type Disposable, ResourceTracker } from "../disposable.js";
 import {
   type LasciiErrorContext,
   type LasciiErrorType,
@@ -29,7 +30,7 @@ interface QueueItem {
   char: string;
 }
 
-class LasciiTextEffect {
+class LasciiTextEffect implements Disposable {
   static RevealOrigin = Object.freeze({
     START: "start",
     MIDDLE: "middle",
@@ -57,11 +58,13 @@ class LasciiTextEffect {
   frameRequest: number | null;
   resolve: (() => void) | null;
   safetyTimeout: ReturnType<typeof setTimeout> | null;
+  phraseTimeout: ReturnType<typeof setTimeout> | null;
   rawText: string;
   phrases: string[];
   shouldLoop: boolean;
   counter: number;
   failed: boolean;
+  private readonly tracker = new ResourceTracker();
 
   constructor(element: HTMLElement, options: LasciiTextEffectOptions = {}) {
     this.el = element;
@@ -71,11 +74,14 @@ class LasciiTextEffect {
     this.frameRequest = null;
     this.resolve = null;
     this.safetyTimeout = null;
+    this.phraseTimeout = null;
     this.rawText = (this.el.textContent ?? "").trim();
     this.phrases = [];
     this.shouldLoop = false;
     this.counter = 0;
     this.failed = false;
+
+    this.tracker.track(() => this.stopActiveWork());
 
     try {
       this.phrases = this.extractPhrases();
@@ -87,23 +93,39 @@ class LasciiTextEffect {
     }
   }
 
+  get disposed(): boolean {
+    return this.tracker.isDisposed;
+  }
+
+  dispose(): void {
+    if (this.tracker.isDisposed) return;
+    this.failed = true;
+    this.tracker.dispose();
+  }
+
+  private ensureNotDisposed(): void {
+    if (this.tracker.isDisposed) {
+      throw new Error("LasciiTextEffect has been disposed");
+    }
+  }
+
   private handleError(
     type: LasciiErrorType | string,
     error: unknown,
     context: LasciiErrorContext = {},
   ): void {
-    if (this.failed) return;
+    if (this.failed || this.tracker.isDisposed) return;
     this.failed = true;
     logLasciiError(type, error, {
       element: this.el,
       config: this.config,
       ...context,
     });
-    this.cleanup();
+    this.stopActiveWork();
     this.fallbackToOriginal();
   }
 
-  private cleanup(): void {
+  private stopActiveWork(): void {
     if (this.frameRequest !== null) {
       cancelAnimationFrame(this.frameRequest);
       this.frameRequest = null;
@@ -111,6 +133,10 @@ class LasciiTextEffect {
     if (this.safetyTimeout !== null) {
       clearTimeout(this.safetyTimeout);
       this.safetyTimeout = null;
+    }
+    if (this.phraseTimeout !== null) {
+      clearTimeout(this.phraseTimeout);
+      this.phraseTimeout = null;
     }
     this.resolve?.();
     this.resolve = null;
@@ -133,6 +159,7 @@ class LasciiTextEffect {
   }
 
   start(): void {
+    this.ensureNotDisposed();
     if (this.failed || !this.phrases.length) return;
     if (this.shouldLoop) {
       this.displayNextPhrase();
@@ -142,12 +169,13 @@ class LasciiTextEffect {
   }
 
   displayNextPhrase(): void {
-    if (this.failed) return;
+    if (this.failed || this.tracker.isDisposed) return;
     const currentPhrase = this.phrases[this.counter];
     this.setText(currentPhrase).then(() => {
-      if (this.failed) return;
-      setTimeout(() => {
-        if (this.failed) return;
+      if (this.failed || this.tracker.isDisposed) return;
+      this.phraseTimeout = setTimeout(() => {
+        this.phraseTimeout = null;
+        if (this.failed || this.tracker.isDisposed) return;
         this.updateCounter();
         this.displayNextPhrase();
       }, this.config.phraseDelay);
@@ -159,6 +187,7 @@ class LasciiTextEffect {
   }
 
   setText(newText: string): Promise<void> {
+    this.ensureNotDisposed();
     if (this.failed) {
       return Promise.resolve();
     }
@@ -173,11 +202,13 @@ class LasciiTextEffect {
       this.resetAnimation();
 
       this.safetyTimeout = setTimeout(() => {
+        this.safetyTimeout = null;
         if (this.frameRequest) {
           cancelAnimationFrame(this.frameRequest);
           this.frameRequest = null;
           this.el.textContent = newText;
           this.resolve?.();
+          this.resolve = null;
         }
       }, 3000);
 
@@ -221,13 +252,14 @@ class LasciiTextEffect {
   resetAnimation(): void {
     if (this.frameRequest !== null) {
       cancelAnimationFrame(this.frameRequest);
+      this.frameRequest = null;
     }
     this.frame = 0;
     this.update();
   }
 
   update = (): void => {
-    if (this.failed) return;
+    if (this.failed || this.tracker.isDisposed) return;
 
     try {
       let output = "";
@@ -271,6 +303,7 @@ class LasciiTextEffect {
           this.safetyTimeout = null;
         }
         this.resolve?.();
+        this.resolve = null;
       } else {
         this.frameRequest = requestAnimationFrame(this.update);
         this.frame++;
@@ -286,11 +319,12 @@ class LasciiTextEffect {
     ];
   }
 
-  static init(selector = "[data-lascii-text]"): void {
+  static init(selector = "[data-lascii-text]"): LasciiTextEffect[] {
     const elements = document.querySelectorAll(selector);
-    elements.forEach((element) => {
-      new LasciiTextEffect(element as HTMLElement);
-    });
+    return Array.from(
+      elements,
+      (element) => new LasciiTextEffect(element as HTMLElement),
+    );
   }
 }
 
