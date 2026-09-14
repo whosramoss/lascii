@@ -52,10 +52,14 @@ export class LasciiEmitter extends EventTarget {
   ): void;
   addEventListener(
     type: string,
-    listener: EventListenerOrEventListenerObject | null,
+    listener: unknown,
     options?: boolean | AddEventListenerOptions,
   ): void {
-    super.addEventListener(type, listener, options);
+    super.addEventListener(
+      type,
+      listener as EventListenerOrEventListenerObject | null,
+      options,
+    );
   }
 
   removeEventListener<K extends keyof LasciiEventDetailMap>(
@@ -70,10 +74,14 @@ export class LasciiEmitter extends EventTarget {
   ): void;
   removeEventListener(
     type: string,
-    listener: EventListenerOrEventListenerObject | null,
+    listener: unknown,
     options?: boolean | EventListenerOptions,
   ): void {
-    super.removeEventListener(type, listener, options);
+    super.removeEventListener(
+      type,
+      listener as EventListenerOrEventListenerObject | null,
+      options,
+    );
   }
 
   protected emit<K extends keyof LasciiEventDetailMap>(
