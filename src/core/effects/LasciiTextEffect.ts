@@ -6,6 +6,12 @@ import {
   toError,
 } from "../errors.js";
 import { LasciiEmitter } from "../events.js";
+import {
+  beginAccessibleTransition,
+  endAccessibleTransition,
+  ensureLiveRegion,
+  prefersReducedMotion,
+} from "../a11y.js";
 
 export type {
   LasciiCompleteDetail,
@@ -27,10 +33,11 @@ export interface LasciiTextEffectOptions {
   phraseDelay?: number;
   separator?: string;
   revealOrigin?: RevealOriginValue;
+  reducedMotion?: boolean;
 }
 
 export interface LasciiTextEffectDefaults
-  extends Required<LasciiTextEffectOptions> {}
+  extends Required<Omit<LasciiTextEffectOptions, "reducedMotion">> {}
 
 interface QueueItem {
   from: string;
@@ -75,6 +82,7 @@ class LasciiTextEffect extends LasciiEmitter implements Disposable {
   counter: number;
   failed: boolean;
   private readonly tracker = new ResourceTracker();
+  private readonly reduceMotion: boolean;
 
   constructor(element: HTMLElement, options: LasciiTextEffectOptions = {}) {
     super();
@@ -91,8 +99,12 @@ class LasciiTextEffect extends LasciiEmitter implements Disposable {
     this.shouldLoop = false;
     this.counter = 0;
     this.failed = false;
+    this.reduceMotion = prefersReducedMotion(options.reducedMotion);
 
-    this.tracker.track(() => this.stopActiveWork());
+    this.tracker.track(() => {
+      this.stopActiveWork();
+      endAccessibleTransition(this.el);
+    });
 
     try {
       this.phrases = this.extractPhrases();
@@ -144,6 +156,7 @@ class LasciiTextEffect extends LasciiEmitter implements Disposable {
     });
     this.stopActiveWork();
     this.fallbackToOriginal();
+    endAccessibleTransition(this.el);
     this.emit("error", { error: err });
   }
 
@@ -221,8 +234,14 @@ class LasciiTextEffect extends LasciiEmitter implements Disposable {
         this.resolve = resolve;
       });
       this.queue = this.buildQueue(oldText, newText, length);
+      ensureLiveRegion(this.el);
       this.emit("start", { text: newText });
       this.emit("progress", { progress: 0 });
+      if (this.reduceMotion) {
+        this.completeAnimation(newText);
+        return Promise.resolve();
+      }
+      beginAccessibleTransition(this.el, newText);
       this.resetAnimation();
 
       this.safetyTimeout = setTimeout(() => {
@@ -345,6 +364,7 @@ class LasciiTextEffect extends LasciiEmitter implements Disposable {
       return;
     }
     this.el.textContent = text;
+    endAccessibleTransition(this.el);
     if (this.safetyTimeout !== null) {
       clearTimeout(this.safetyTimeout);
       this.safetyTimeout = null;

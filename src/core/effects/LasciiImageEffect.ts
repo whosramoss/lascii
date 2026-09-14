@@ -6,6 +6,7 @@ import {
   toError,
 } from "../errors.js";
 import { LasciiEmitter } from "../events.js";
+import { prefersReducedMotion } from "../a11y.js";
 
 export type {
   LasciiCompleteDetail,
@@ -30,10 +31,11 @@ export interface LasciiImageEffectOptions {
   REVEAL_DELAY_MS?: number;
   BACKGROUND_COLOR?: string;
   TEXT_COLOR?: string;
+  reducedMotion?: boolean;
 }
 
 export interface LasciiImageEffectDefaults
-  extends Required<LasciiImageEffectOptions> {}
+  extends Required<Omit<LasciiImageEffectOptions, "reducedMotion">> {}
 
 class LasciiImageEffect extends LasciiEmitter implements Disposable {
   static DEFAULTS: LasciiImageEffectDefaults = {
@@ -71,6 +73,7 @@ class LasciiImageEffect extends LasciiEmitter implements Disposable {
   private readonly activeTimeouts: Array<ReturnType<typeof setTimeout>> = [];
   private scrambleTicker: ReturnType<typeof setInterval> | null = null;
   private revealScheduled = false;
+  private readonly reduceMotion: boolean;
 
   constructor(
     img: HTMLImageElement,
@@ -79,12 +82,13 @@ class LasciiImageEffect extends LasciiEmitter implements Disposable {
   ) {
     super();
     this.img = img;
-    this.img.style.opacity = "0";
     this.index = index;
     this.config = { ...LasciiImageEffect.DEFAULTS, ...options };
     this._minAsciiColumns = this.config.ASCII_COLUMNS;
     this.canvas = document.createElement("canvas");
-    this.ctx = this.canvas.getContext("2d");
+    this.canvas.setAttribute("aria-hidden", "true");
+    this.ctx = null;
+    this.reduceMotion = prefersReducedMotion(options.reducedMotion);
     this.staggerDelay = this.index * this.config.IMAGE_STAGGER_MS;
     this.failed = false;
 
@@ -92,7 +96,18 @@ class LasciiImageEffect extends LasciiEmitter implements Disposable {
       this.clearTimers();
       this.canvas.remove();
       this.clearSamplingImage();
+      this.img.removeAttribute("aria-busy");
     });
+
+    if (this.reduceMotion) {
+      this.img.style.opacity = "1";
+      queueMicrotask(() => this.finishWithoutAnimation());
+      return;
+    }
+
+    this.img.style.opacity = "0";
+    this.img.setAttribute("aria-busy", "true");
+    this.ctx = this.canvas.getContext("2d");
 
     if (!this.ctx) {
       queueMicrotask(() => {
@@ -180,6 +195,7 @@ class LasciiImageEffect extends LasciiEmitter implements Disposable {
     this.clearTimers();
     this.cleanup();
     this.fallbackToOriginal();
+    this.img.removeAttribute("aria-busy");
     this.emit("error", { error: err });
   }
 
@@ -291,6 +307,7 @@ class LasciiImageEffect extends LasciiEmitter implements Disposable {
     this.ensureNotDisposed();
     if (this.failed || !this.ctx) return;
     try {
+      this.img.setAttribute("aria-busy", "true");
       this.emit("start", { text: this.label() });
       this.emit("progress", { progress: 0 });
       const { asciiGrid, brightnessGrid } = this.imageToAsciiGrid();
@@ -472,11 +489,19 @@ class LasciiImageEffect extends LasciiEmitter implements Disposable {
     return this.img.alt || this.img.src;
   }
 
+  private finishWithoutAnimation(): void {
+    if (this.failed || this.tracker.isDisposed) return;
+    this.emit("start", { text: this.label() });
+    this.emit("progress", { progress: 1 });
+    this.emit("complete", { text: this.label() });
+  }
+
   revealImage(): void {
     if (this.failed || this.tracker.isDisposed || this.revealScheduled) return;
     this.revealScheduled = true;
     this.emit("progress", { progress: 1 });
     this.emit("complete", { text: this.label() });
+    this.img.removeAttribute("aria-busy");
     this.trackTimeout(() => {
       if (this.failed || this.tracker.isDisposed) return;
       this.canvas.style.transition = "opacity 0.5s ease";

@@ -38,4 +38,28 @@ describe("LasciiImageEffect", () => {
     await Promise.resolve();
     effects.forEach((effect) => effect.dispose());
   });
+
+  it("skips the ASCII animation when reducedMotion is set", async () => {
+    const img = document.createElement("img");
+    img.alt = "Portrait";
+    img.src = "https://example.com/photo.jpg";
+    document.body.append(img);
+
+    const effect = new LasciiImageEffect(img, 0, { reducedMotion: true });
+    const started: string[] = [];
+    const completed: string[] = [];
+    effect.addEventListener("start", (event) => started.push(event.detail.text));
+    effect.addEventListener("complete", (event) => {
+      completed.push(event.detail.text);
+    });
+
+    await Promise.resolve();
+    expect(effect.failed).toBe(false);
+    expect(img.style.opacity).toBe("1");
+    expect(img.hasAttribute("aria-busy")).toBe(false);
+    expect(effect.canvas.getAttribute("aria-hidden")).toBe("true");
+    expect(started).toEqual(["Portrait"]);
+    expect(completed).toEqual(["Portrait"]);
+    effect.dispose();
+  });
 });

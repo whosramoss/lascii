@@ -190,6 +190,53 @@ describe("LasciiTextEffect", () => {
     });
   });
 
+  describe("accessibility", () => {
+    it("exposes a polite live region and labels scramble text", async () => {
+      const { el } = mount("Hello");
+      await Promise.resolve();
+      expect(el.getAttribute("aria-live")).toBe("polite");
+      expect(el.getAttribute("aria-atomic")).toBe("true");
+      expect(el.getAttribute("aria-busy")).toBe("true");
+      expect(el.getAttribute("aria-label")).toBe("Hello");
+      await reveal(el, "Hello");
+      expect(el.hasAttribute("aria-busy")).toBe(false);
+      expect(el.hasAttribute("aria-label")).toBe(false);
+    });
+
+    it("keeps an author-provided aria-live value", async () => {
+      const el = document.createElement("p");
+      el.textContent = "Hello";
+      el.setAttribute("aria-live", "assertive");
+      document.body.append(el);
+      const effect = new LasciiTextEffect(el, FAST);
+      live.push(effect);
+      await reveal(el, "Hello");
+      expect(el.getAttribute("aria-live")).toBe("assertive");
+    });
+
+    it("skips animation when reducedMotion is set", async () => {
+      const { el, effect } = mount("Hello", { reducedMotion: true });
+      const completed: string[] = [];
+      effect.addEventListener("complete", (event) => {
+        completed.push(event.detail.text);
+      });
+      await Promise.resolve();
+      expect(el.textContent).toBe("Hello");
+      expect(el.querySelector(".dud")).toBeNull();
+      expect(el.getAttribute("aria-live")).toBe("polite");
+      expect(el.hasAttribute("aria-label")).toBe(false);
+      expect(completed).toEqual(["Hello"]);
+    });
+
+    it("shows looped phrases instantly under reduced motion", async () => {
+      const { el } = mount("Alpha|:|Beta", { reducedMotion: true });
+      await Promise.resolve();
+      expect(el.textContent).toBe("Alpha");
+      await vi.advanceTimersByTimeAsync(25);
+      expect(el.textContent).toBe("Beta");
+    });
+  });
+
   describe("events", () => {
     it("emits start, progress, and complete for a reveal", async () => {
       const el = document.createElement("p");

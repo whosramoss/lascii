@@ -152,6 +152,8 @@ On construction, the element’s text is cleared. The first animation is schedul
 | `separator` | `string` | `"\|:|"` | Delimiter between phrases in `textContent`. |
 | `revealOrigin` | `string` | `"start"` | `"start"` or `"middle"` (`RevealOrigin`). |
 
+`reducedMotion` is a constructor option (not a default): `true` skips animation, `false` forces it, omitted follows `prefers-reduced-motion`. See [Accessibility](#accessibility).
+
 Scramble characters are rendered in `<span class="dud">` — style `.dud` in your CSS if needed.
 
 ### Instance methods
@@ -224,6 +226,8 @@ new LasciiImageEffect(img, index = 0, options?)
 | `BACKGROUND_COLOR` | `string` | `"transparent"` | Canvas cell background. |
 | `TEXT_COLOR` | `string` | `"#c8c8c8"` | ASCII character color. |
 
+`reducedMotion` is a constructor option (not a default): `true` skips the ASCII animation and shows the original image, `false` forces animation, omitted follows `prefers-reduced-motion`.
+
 Column count is recalculated from the image’s displayed width:  
 `cols = clamp(ASCII_COLUMNS, round(width / TARGET_CELL_CSS_PX), MAX_ASCII_COLUMNS)`.
 
@@ -276,6 +280,30 @@ effect.addEventListener("error", (event) => {
   console.warn(event.detail.error);
 });
 ```
+
+---
+
+## Accessibility
+
+Effects follow `prefers-reduced-motion: reduce` (WCAG 2.3.3 / motion preferences):
+
+- **Text** — the target phrase is applied immediately; scramble/`requestAnimationFrame` is skipped. Looped phrases still advance after `phraseDelay`, without animation.
+- **Image** — the original `<img>` stays visible; canvas sampling and cell animation do not run.
+
+Override with `{ reducedMotion: true }` or `{ reducedMotion: false }`.
+
+### Screen readers
+
+`LasciiTextEffect` treats the host as a live region:
+
+| Attribute | When | Purpose |
+| --------- | ---- | ------- |
+| `aria-live="polite"` | If the author did not set `aria-live` | Announce phrase changes without interrupting |
+| `aria-atomic="true"` | If missing | Read the whole phrase |
+| `aria-busy="true"` and `aria-label` | During scramble | Expose the destination text instead of random characters |
+| (remove busy/label) | When complete | Accessible name falls back to visible `textContent` |
+
+`LasciiImageEffect` sets `aria-hidden="true"` on the decorative canvas and `aria-busy="true"` on the image while the ASCII overlay is running (cleared on reveal, error, or dispose). Prefer a meaningful `alt` on the `<img>`.
 
 ---
 
