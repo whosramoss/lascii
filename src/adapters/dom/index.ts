@@ -3,5 +3,6 @@ import LasciiTextEffect from "../../core/effects/LasciiTextEffect.js";
 import { autoInitDom, initDom } from "./initDom.js";
 
 export type { Disposable } from "../../core/disposable.js";
+export type { InitDomOptions } from "./initDom.js";
 export { LasciiImageEffect, LasciiTextEffect, initDom, autoInitDom };
 export default { LasciiImageEffect, LasciiTextEffect, initDom, autoInitDom };

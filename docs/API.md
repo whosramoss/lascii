@@ -31,6 +31,7 @@ import lascii, {
 | `LasciiImageEffect` | `class` | ASCII canvas reveal for images. |
 | `init` | `function` | Scans the DOM and starts effects (`initDom`). |
 | `autoInitDom` | `function` | Registers `init` on `DOMContentLoaded`, or runs immediately if the document is ready. |
+| `InitDomOptions` | `type` | Options for `init` / `autoInitDom` (`{ lazy?: boolean }`). |
 | `default` | `object` | `{ LasciiTextEffect, LasciiImageEffect, init, autoInitDom }`. |
 
 ### `init()` / `autoInitDom()`
@@ -40,7 +41,20 @@ import lascii, {
 - `LasciiImageEffect.init("[data-lascii-image]")`
 - `LasciiTextEffect.init("[data-lascii-text]")`
 
-`autoInitDom()` calls `init()` when the document is ready.
+Pass `{ lazy: true }` to defer creation until each element is near the viewport (Intersection Observer with `rootMargin: "100px"`). This reduces startup work on pages with many effects, especially image sampling. If `IntersectionObserver` is unavailable, init falls back to the eager path.
+
+```js
+import { init } from "lascii";
+
+init({ lazy: true });
+```
+
+`autoInitDom()` calls `init()` when the document is ready and accepts the same options:
+
+```js
+import { autoInitDom } from "lascii";
+autoInitDom({ lazy: true });
+```
 
 Importing `lascii` does **not** call `autoInitDom()` automatically. For declarative setup:
 
