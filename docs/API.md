@@ -271,7 +271,7 @@ initDom();
 
 ### Tree-shaking / side effects
 
-Only `./dist/auto.js` is marked as side-effectful in `package.json`. All other entry points are tree-shakeable:
+Only `./dist/auto.js` and `./dist/auto.cjs` are marked as side-effectful in `package.json`. All other entry points are tree-shakeable:
 
 - `import { LasciiTextEffect } from "lascii"` — can drop unused image code
 - `import from "lascii/core/text"` — text effect only

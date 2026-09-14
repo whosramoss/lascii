@@ -5,7 +5,14 @@ Thank you for your interest in contributing. This project is a small, focused li
 ## Getting started
 
 1. Fork and clone the repository.
-2. Install dependencies for the demo app (the npm package itself has no runtime dependencies):
+2. Install dependencies at the repository root (the library has no runtime dependencies; `tsup` and TypeScript are build-time only):
+
+   ```bash
+   npm install
+   npm run build
+   ```
+
+3. For the demo app:
 
    ```bash
    cd www
@@ -13,7 +20,9 @@ Thank you for your interest in contributing. This project is a small, focused li
    npm run dev
    ```
 
-3. The library source lives in `src/` at the repository root. Only `dist/`, `docs/`, and `CHANGELOG.md` are published to npm — `src/` and `www/` are **not** included in the package.
+   Use `npm run dev` or `npm run build:watch` at the repository root to rebuild the library while the demo is running.
+
+4. The library source lives in `src/` at the repository root. Only `dist/`, `docs/`, and `CHANGELOG.md` are published to npm — `src/` and `www/` are **not** included in the package.
 
 ## Development workflow
 
