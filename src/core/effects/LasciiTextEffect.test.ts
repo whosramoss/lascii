@@ -23,6 +23,7 @@ function mount(text: string, options: LasciiTextEffectOptions = {}) {
 }
 
 async function reveal(el: HTMLElement, expected: string): Promise<void> {
+  await Promise.resolve();
   for (let i = 0; i < 80; i++) {
     if (el.textContent === expected) {
       await Promise.resolve();
@@ -186,6 +187,74 @@ describe("LasciiTextEffect", () => {
       expect(() => effect.setText("Nope")).toThrow(/disposed/);
       effect.dispose();
       expect(el.isConnected).toBe(true);
+    });
+  });
+
+  describe("events", () => {
+    it("emits start, progress, and complete for a reveal", async () => {
+      const el = document.createElement("p");
+      el.textContent = "Hello";
+      document.body.append(el);
+      const effect = new LasciiTextEffect(el, FAST);
+      live.push(effect);
+
+      const started: string[] = [];
+      const progress: number[] = [];
+      const completed: string[] = [];
+      effect.addEventListener("start", (event) => {
+        started.push(event.detail.text);
+      });
+      effect.addEventListener("progress", (event) => {
+        progress.push(event.detail.progress);
+      });
+      effect.addEventListener("complete", (event) => {
+        completed.push(event.detail.text);
+      });
+
+      await reveal(el, "Hello");
+      expect(started).toEqual(["Hello"]);
+      expect(completed).toEqual(["Hello"]);
+      expect(progress[0]).toBe(0);
+      expect(progress.at(-1)).toBe(1);
+      expect(progress.every((value) => value >= 0 && value <= 1)).toBe(true);
+    });
+
+    it("emits complete for each looped phrase", async () => {
+      const { el, effect } = mount("Alpha|:|Beta");
+      const completed: string[] = [];
+      effect.addEventListener("complete", (event) => {
+        completed.push(event.detail.text);
+      });
+
+      await reveal(el, "Alpha");
+      await vi.advanceTimersByTimeAsync(25);
+      await reveal(el, "Beta");
+      expect(completed).toEqual(["Alpha", "Beta"]);
+    });
+
+    it("emits error when the animation throws", async () => {
+      const el = document.createElement("p");
+      el.textContent = "Hi";
+      document.body.append(el);
+      const effect = new LasciiTextEffect(el, FAST);
+      live.push(effect);
+
+      const errors: Error[] = [];
+      effect.addEventListener("error", (event) => {
+        errors.push(event.detail.error);
+      });
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      Object.defineProperty(el, "innerText", {
+        configurable: true,
+        get() {
+          throw new Error("boom");
+        },
+      });
+
+      await Promise.resolve();
+      expect(effect.failed).toBe(true);
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toBe("boom");
     });
   });
 });

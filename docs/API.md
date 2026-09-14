@@ -32,6 +32,7 @@ import lascii, {
 | `init` | `function` | Scans the DOM and starts effects (`initDom`). |
 | `autoInitDom` | `function` | Registers `init` on `DOMContentLoaded`, or runs immediately if the document is ready. |
 | `InitDomOptions` | `type` | Options for `init` / `autoInitDom` (`{ lazy?: boolean }`). |
+| `LasciiEvent` | `object` | Event name constants: `start`, `progress`, `complete`, `error`. |
 | `default` | `object` | `{ LasciiTextEffect, LasciiImageEffect, init, autoInitDom }`. |
 
 ### `init()` / `autoInitDom()`
@@ -126,7 +127,7 @@ new LasciiTextEffect(element, options?)
 - **element** — DOM node whose `textContent` is the source string.
 - **options** — Partial override of `LasciiTextEffect.DEFAULTS`.
 
-On construction, the element’s text is cleared and the animation starts.
+On construction, the element’s text is cleared. The first animation is scheduled on a **microtask**, so you can attach lifecycle listeners immediately after `new`.
 
 ### Static members
 
@@ -159,6 +160,8 @@ Scramble characters are rendered in `<span class="dud">` — style `.dud` in you
 | ------ | ------- | ----------- |
 | `setText(newText)` | `Promise<void>` | Animates from current text to `newText`. Resolves when complete (3s safety timeout). |
 
+Both effects extend `EventTarget` and emit lifecycle events (see [Lifecycle events](#lifecycle-events)).
+
 ### Static methods
 
 ```js
@@ -173,6 +176,10 @@ Creates one `LasciiTextEffect` per matching element.
 const effect = new LasciiTextEffect(document.querySelector(".headline"), {
   phraseDelay: 1200,
   revealOrigin: LasciiTextEffect.RevealOrigin.MIDDLE,
+});
+
+effect.addEventListener("complete", (event) => {
+  console.log("Effect completed:", event.detail.text);
 });
 
 await effect.setText("Updated copy");
@@ -228,6 +235,8 @@ LasciiImageEffect.init(selector = "[data-lascii-image]")
 
 Creates one `LasciiImageEffect` per matching image, with `index` from `forEach` order.
 
+Both effects extend `EventTarget` and emit lifecycle events (see [Lifecycle events](#lifecycle-events)). For images, `start` / `complete` `detail.text` is `img.alt` or, if empty, `img.src`.
+
 ### Example
 
 ```js
@@ -236,6 +245,35 @@ document.querySelectorAll("[data-lascii-image]").forEach((img, index) => {
     SCRAMBLE_COUNT: 20,
     TEXT_COLOR: "#ffffff",
   });
+});
+```
+
+---
+
+## Lifecycle events
+
+`LasciiTextEffect` and `LasciiImageEffect` extend `EventTarget`. Attach listeners after construction; the first animation turn waits one microtask so `start` is not missed.
+
+| Event     | When                     | `detail`               |
+| --------- | ------------------------ | ---------------------- |
+| `start`   | Animation begins         | `{ text: string }`     |
+| `progress`| During the animation     | `{ progress: number }` |
+| `complete`| Animation finished       | `{ text: string }`     |
+| `error`   | Recoverable runtime failure | `{ error: Error }`  |
+
+`progress` is a number from `0` to `1`. Looping text effects emit `start` / `complete` once per phrase.
+
+```js
+import { LasciiEvent, LasciiTextEffect } from "lascii";
+
+const effect = new LasciiTextEffect(element);
+
+effect.addEventListener(LasciiEvent.Complete, (event) => {
+  console.log("Effect completed:", event.detail.text);
+});
+
+effect.addEventListener("error", (event) => {
+  console.warn(event.detail.error);
 });
 ```
 

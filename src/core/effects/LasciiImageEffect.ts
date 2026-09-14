@@ -5,6 +5,15 @@ import {
   logLasciiError,
   toError,
 } from "../errors.js";
+import { LasciiEmitter } from "../events.js";
+
+export type {
+  LasciiCompleteDetail,
+  LasciiErrorDetail,
+  LasciiProgressDetail,
+  LasciiStartDetail,
+} from "../events.js";
+export { LasciiEvent } from "../events.js";
 
 export interface LasciiImageEffectOptions {
   ASCII_CHARS?: string;
@@ -26,7 +35,7 @@ export interface LasciiImageEffectOptions {
 export interface LasciiImageEffectDefaults
   extends Required<LasciiImageEffectOptions> {}
 
-class LasciiImageEffect implements Disposable {
+class LasciiImageEffect extends LasciiEmitter implements Disposable {
   static DEFAULTS: LasciiImageEffectDefaults = {
     ASCII_CHARS: " . . . . . . :::=+xX#0369",
     FONT_SIZE: 40,
@@ -61,12 +70,14 @@ class LasciiImageEffect implements Disposable {
   private readonly tracker = new ResourceTracker();
   private readonly activeTimeouts: Array<ReturnType<typeof setTimeout>> = [];
   private scrambleTicker: ReturnType<typeof setInterval> | null = null;
+  private revealScheduled = false;
 
   constructor(
     img: HTMLImageElement,
     index = 0,
     options: LasciiImageEffectOptions = {},
   ) {
+    super();
     this.img = img;
     this.img.style.opacity = "0";
     this.index = index;
@@ -84,10 +95,13 @@ class LasciiImageEffect implements Disposable {
     });
 
     if (!this.ctx) {
-      this.handleError(
-        "canvas_context_unavailable",
-        new Error("Unable to acquire 2d rendering context"),
-      );
+      queueMicrotask(() => {
+        if (this.tracker.isDisposed) return;
+        this.handleError(
+          "canvas_context_unavailable",
+          new Error("Unable to acquire 2d rendering context"),
+        );
+      });
       return;
     }
 
@@ -157,7 +171,8 @@ class LasciiImageEffect implements Disposable {
   ): void {
     if (this.failed || this.tracker.isDisposed) return;
     this.failed = true;
-    logLasciiError(type, error, {
+    const err = toError(error);
+    logLasciiError(type, err, {
       element: this.img,
       config: this.config,
       ...context,
@@ -165,6 +180,7 @@ class LasciiImageEffect implements Disposable {
     this.clearTimers();
     this.cleanup();
     this.fallbackToOriginal();
+    this.emit("error", { error: err });
   }
 
   private cleanup(): void {
@@ -275,6 +291,8 @@ class LasciiImageEffect implements Disposable {
     this.ensureNotDisposed();
     if (this.failed || !this.ctx) return;
     try {
+      this.emit("start", { text: this.label() });
+      this.emit("progress", { progress: 0 });
       const { asciiGrid, brightnessGrid } = this.imageToAsciiGrid();
       this.animateCells(asciiGrid, brightnessGrid);
     } catch (error) {
@@ -389,6 +407,7 @@ class LasciiImageEffect implements Disposable {
             this.drawCharacter(col, row, asciiGrid[row][col]);
             scrambleState[cellIndex] = 0;
             settledCount++;
+            this.emit("progress", { progress: settledCount / totalCells });
             if (settledCount === totalCells) this.revealImage();
           } else {
             this.drawCharacter(col, row, this.randomDenseCharacter());
@@ -418,6 +437,7 @@ class LasciiImageEffect implements Disposable {
             this.drawCharacter(col, row, asciiGrid[row][col]);
             scrambleState[cellIndex] = 0;
             settledCount++;
+            this.emit("progress", { progress: settledCount / totalCells });
             if (settledCount === totalCells) this.revealImage();
           } else {
             scrambleState[cellIndex] = this.config.SCRAMBLE_COUNT;
@@ -448,8 +468,15 @@ class LasciiImageEffect implements Disposable {
     return this.denseChars[Math.floor(Math.random() * this.denseChars.length)];
   }
 
+  private label(): string {
+    return this.img.alt || this.img.src;
+  }
+
   revealImage(): void {
-    if (this.failed || this.tracker.isDisposed) return;
+    if (this.failed || this.tracker.isDisposed || this.revealScheduled) return;
+    this.revealScheduled = true;
+    this.emit("progress", { progress: 1 });
+    this.emit("complete", { text: this.label() });
     this.trackTimeout(() => {
       if (this.failed || this.tracker.isDisposed) return;
       this.canvas.style.transition = "opacity 0.5s ease";
