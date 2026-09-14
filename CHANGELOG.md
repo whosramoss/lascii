@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-09-14
+
+### Added
+
+- Optional lazy initialization via Intersection Observer (`initDom({ lazy: true })`). Effects are created when elements approach the viewport (`rootMargin: "100px"`).
+- Lifecycle events on effects (`start`, `progress`, `complete`, `error`) through the `EventTarget` pattern.
+- Accessibility support: `prefers-reduced-motion`, `aria-live`, and `aria-label` announcements for screen readers.
+- Automated test suite with Vitest and jsdom covering phrase extraction, looping, and `LasciiTextEffect` behavior.
+
+### Changed
+
+- Build system migrated from `tsc` to `tsup` (ESM + CJS, minification, declaration emit, source maps, and tree shaking).
+- Added `build:watch` and `dev` scripts for faster local iteration.
+
 ## [2.0.0] - 2026-07-24
 
 ### Breaking Changes
@@ -54,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TypeScript declaration files for all public entry points.
 - Documentation: README, API reference, contributing and security policies.
 
+[2.1.0]: https://github.com/whosramoss/lascii/releases/tag/v2.1.0
 [2.0.0]: https://github.com/whosramoss/lascii/releases/tag/v2.0.0
 [1.1.0]: https://github.com/whosramoss/lascii/releases/tag/v1.1.0
 [1.0.0]: https://github.com/whosramoss/lascii/releases/tag/v1.0.0
