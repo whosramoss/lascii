@@ -76,6 +76,8 @@
     "build": "tsup",
     "build:watch": "tsup --watch",
     "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prepare": "npm run build"
   },
   "keywords": [
@@ -97,7 +99,9 @@
     "url": "git+https://github.com/whosramoss/lascii.git"
   },
   "devDependencies": {
+    "jsdom": "^26.1.0",
     "tsup": "^8.5.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.0"
   }
 }
