@@ -5,7 +5,15 @@ Thank you for your interest in contributing. This project is a small, focused li
 ## Getting started
 
 1. Fork and clone the repository.
-2. Install dependencies for the demo app (the npm package itself has no runtime dependencies):
+2. Install dependencies at the repository root (the library has no runtime dependencies; `tsup`, TypeScript, Vitest, and jsdom are development-only):
+
+   ```bash
+   npm install
+   npm run build
+   npm test
+   ```
+
+3. For the demo app:
 
    ```bash
    cd www
@@ -13,13 +21,15 @@ Thank you for your interest in contributing. This project is a small, focused li
    npm run dev
    ```
 
-3. The library source lives in `src/` at the repository root. Only `dist/`, `docs/`, and `CHANGELOG.md` are published to npm — `src/` and `www/` are **not** included in the package.
+   Use `npm run dev` or `npm run build:watch` at the repository root to rebuild the library while the demo is running.
+
+4. The library source lives in `src/` at the repository root. Only `dist/`, `docs/`, and `CHANGELOG.md` are published to npm — `src/` and `www/` are **not** included in the package.
 
 ## Development workflow
 
 1. Create a branch from `main`.
 2. Make your changes in `src/`.
-3. Verify behavior in `www/` (text and image effects).
+3. Run `npm test` and verify behavior in `www/` (text and image effects).
 4. Update `CHANGELOG.md` under **Unreleased** (or the appropriate version) for user-facing changes.
 5. Open a pull request with a clear description and, if relevant, a link to the demo behavior you changed.
 
@@ -52,6 +62,7 @@ docs: clarify image wrapper requirements in API
 
 - One logical change per PR when possible.
 - Do not include unrelated formatting or drive-by refactors.
+- Ensure `npm test` passes.
 - Ensure `npm pack --dry-run` still lists only intended files (`dist/`, `docs/`, and `CHANGELOG.md` via `files` in `package.json`).
 
 ## Questions

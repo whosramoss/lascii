@@ -6,4 +6,5 @@ import { autoInitDom } from "./adapters/dom/initDom.js";
 
 autoInitDom();
 
+export type { InitDomOptions } from "./adapters/dom/initDom.js";
 export { autoInitDom, initDom as init } from "./adapters/dom/initDom.js";

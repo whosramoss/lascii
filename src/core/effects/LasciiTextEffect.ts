@@ -3,7 +3,23 @@ import {
   type LasciiErrorContext,
   type LasciiErrorType,
   logLasciiError,
+  toError,
 } from "../errors.js";
+import { LasciiEmitter } from "../events.js";
+import {
+  beginAccessibleTransition,
+  endAccessibleTransition,
+  ensureLiveRegion,
+  prefersReducedMotion,
+} from "../a11y.js";
+
+export type {
+  LasciiCompleteDetail,
+  LasciiErrorDetail,
+  LasciiProgressDetail,
+  LasciiStartDetail,
+} from "../events.js";
+export { LasciiEvent } from "../events.js";
 
 export type RevealOriginValue = "start" | "middle";
 
@@ -17,10 +33,11 @@ export interface LasciiTextEffectOptions {
   phraseDelay?: number;
   separator?: string;
   revealOrigin?: RevealOriginValue;
+  reducedMotion?: boolean;
 }
 
 export interface LasciiTextEffectDefaults
-  extends Required<LasciiTextEffectOptions> {}
+  extends Required<Omit<LasciiTextEffectOptions, "reducedMotion">> {}
 
 interface QueueItem {
   from: string;
@@ -30,7 +47,7 @@ interface QueueItem {
   char: string;
 }
 
-class LasciiTextEffect implements Disposable {
+class LasciiTextEffect extends LasciiEmitter implements Disposable {
   static RevealOrigin = Object.freeze({
     START: "start",
     MIDDLE: "middle",
@@ -65,8 +82,10 @@ class LasciiTextEffect implements Disposable {
   counter: number;
   failed: boolean;
   private readonly tracker = new ResourceTracker();
+  private readonly reduceMotion: boolean;
 
   constructor(element: HTMLElement, options: LasciiTextEffectOptions = {}) {
+    super();
     this.el = element;
     this.config = { ...LasciiTextEffect.DEFAULTS, ...options };
     this.queue = [];
@@ -80,17 +99,30 @@ class LasciiTextEffect implements Disposable {
     this.shouldLoop = false;
     this.counter = 0;
     this.failed = false;
+    this.reduceMotion = prefersReducedMotion(options.reducedMotion);
 
-    this.tracker.track(() => this.stopActiveWork());
+    this.tracker.track(() => {
+      this.stopActiveWork();
+      endAccessibleTransition(this.el);
+    });
 
     try {
       this.phrases = this.extractPhrases();
       this.shouldLoop = this.rawText.includes(this.config.separator);
       this.clearInitialText();
-      this.start();
     } catch (error) {
       this.handleError("text_effect_initialization_failed", error);
+      return;
     }
+
+    queueMicrotask(() => {
+      if (this.failed || this.tracker.isDisposed) return;
+      try {
+        this.start();
+      } catch (error) {
+        this.handleError("text_effect_initialization_failed", error);
+      }
+    });
   }
 
   get disposed(): boolean {
@@ -116,13 +148,16 @@ class LasciiTextEffect implements Disposable {
   ): void {
     if (this.failed || this.tracker.isDisposed) return;
     this.failed = true;
-    logLasciiError(type, error, {
+    const err = toError(error);
+    logLasciiError(type, err, {
       element: this.el,
       config: this.config,
       ...context,
     });
     this.stopActiveWork();
     this.fallbackToOriginal();
+    endAccessibleTransition(this.el);
+    this.emit("error", { error: err });
   }
 
   private stopActiveWork(): void {
@@ -199,6 +234,14 @@ class LasciiTextEffect implements Disposable {
         this.resolve = resolve;
       });
       this.queue = this.buildQueue(oldText, newText, length);
+      ensureLiveRegion(this.el);
+      this.emit("start", { text: newText });
+      this.emit("progress", { progress: 0 });
+      if (this.reduceMotion) {
+        this.completeAnimation(newText);
+        return Promise.resolve();
+      }
+      beginAccessibleTransition(this.el, newText);
       this.resetAnimation();
 
       this.safetyTimeout = setTimeout(() => {
@@ -206,9 +249,7 @@ class LasciiTextEffect implements Disposable {
         if (this.frameRequest) {
           cancelAnimationFrame(this.frameRequest);
           this.frameRequest = null;
-          this.el.textContent = newText;
-          this.resolve?.();
-          this.resolve = null;
+          this.completeAnimation(newText);
         }
       }, 3000);
 
@@ -296,14 +337,11 @@ class LasciiTextEffect implements Disposable {
         }
       }
       this.el.innerHTML = output;
+      const progress =
+        this.queue.length === 0 ? 1 : complete / this.queue.length;
+      this.emit("progress", { progress });
       if (complete === this.queue.length) {
-        this.el.textContent = this.queue.map((item) => item.to).join("");
-        if (this.safetyTimeout !== null) {
-          clearTimeout(this.safetyTimeout);
-          this.safetyTimeout = null;
-        }
-        this.resolve?.();
-        this.resolve = null;
+        this.completeAnimation(this.queue.map((item) => item.to).join(""));
       } else {
         this.frameRequest = requestAnimationFrame(this.update);
         this.frame++;
@@ -317,6 +355,24 @@ class LasciiTextEffect implements Disposable {
     return this.config.chars[
       Math.floor(Math.random() * this.config.chars.length)
     ];
+  }
+
+  private completeAnimation(text: string): void {
+    if (this.failed || this.tracker.isDisposed) {
+      this.resolve?.();
+      this.resolve = null;
+      return;
+    }
+    this.el.textContent = text;
+    endAccessibleTransition(this.el);
+    if (this.safetyTimeout !== null) {
+      clearTimeout(this.safetyTimeout);
+      this.safetyTimeout = null;
+    }
+    this.emit("progress", { progress: 1 });
+    this.emit("complete", { text });
+    this.resolve?.();
+    this.resolve = null;
   }
 
   static init(selector = "[data-lascii-text]"): LasciiTextEffect[] {

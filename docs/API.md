@@ -31,6 +31,8 @@ import lascii, {
 | `LasciiImageEffect` | `class` | ASCII canvas reveal for images. |
 | `init` | `function` | Scans the DOM and starts effects (`initDom`). |
 | `autoInitDom` | `function` | Registers `init` on `DOMContentLoaded`, or runs immediately if the document is ready. |
+| `InitDomOptions` | `type` | Options for `init` / `autoInitDom` (`{ lazy?: boolean }`). |
+| `LasciiEvent` | `object` | Event name constants: `start`, `progress`, `complete`, `error`. |
 | `default` | `object` | `{ LasciiTextEffect, LasciiImageEffect, init, autoInitDom }`. |
 
 ### `init()` / `autoInitDom()`
@@ -40,7 +42,20 @@ import lascii, {
 - `LasciiImageEffect.init("[data-lascii-image]")`
 - `LasciiTextEffect.init("[data-lascii-text]")`
 
-`autoInitDom()` calls `init()` when the document is ready.
+Pass `{ lazy: true }` to defer creation until each element is near the viewport (Intersection Observer with `rootMargin: "100px"`). This reduces startup work on pages with many effects, especially image sampling. If `IntersectionObserver` is unavailable, init falls back to the eager path.
+
+```js
+import { init } from "lascii";
+
+init({ lazy: true });
+```
+
+`autoInitDom()` calls `init()` when the document is ready and accepts the same options:
+
+```js
+import { autoInitDom } from "lascii";
+autoInitDom({ lazy: true });
+```
 
 Importing `lascii` does **not** call `autoInitDom()` automatically. For declarative setup:
 
@@ -112,7 +127,7 @@ new LasciiTextEffect(element, options?)
 - **element** — DOM node whose `textContent` is the source string.
 - **options** — Partial override of `LasciiTextEffect.DEFAULTS`.
 
-On construction, the element’s text is cleared and the animation starts.
+On construction, the element’s text is cleared. The first animation is scheduled on a **microtask**, so you can attach lifecycle listeners immediately after `new`.
 
 ### Static members
 
@@ -137,6 +152,8 @@ On construction, the element’s text is cleared and the animation starts.
 | `separator` | `string` | `"\|:|"` | Delimiter between phrases in `textContent`. |
 | `revealOrigin` | `string` | `"start"` | `"start"` or `"middle"` (`RevealOrigin`). |
 
+`reducedMotion` is a constructor option (not a default): `true` skips animation, `false` forces it, omitted follows `prefers-reduced-motion`. See [Accessibility](#accessibility).
+
 Scramble characters are rendered in `<span class="dud">` — style `.dud` in your CSS if needed.
 
 ### Instance methods
@@ -144,6 +161,8 @@ Scramble characters are rendered in `<span class="dud">` — style `.dud` in you
 | Method | Returns | Description |
 | ------ | ------- | ----------- |
 | `setText(newText)` | `Promise<void>` | Animates from current text to `newText`. Resolves when complete (3s safety timeout). |
+
+Both effects extend `EventTarget` and emit lifecycle events (see [Lifecycle events](#lifecycle-events)).
 
 ### Static methods
 
@@ -159,6 +178,10 @@ Creates one `LasciiTextEffect` per matching element.
 const effect = new LasciiTextEffect(document.querySelector(".headline"), {
   phraseDelay: 1200,
   revealOrigin: LasciiTextEffect.RevealOrigin.MIDDLE,
+});
+
+effect.addEventListener("complete", (event) => {
+  console.log("Effect completed:", event.detail.text);
 });
 
 await effect.setText("Updated copy");
@@ -203,6 +226,8 @@ new LasciiImageEffect(img, index = 0, options?)
 | `BACKGROUND_COLOR` | `string` | `"transparent"` | Canvas cell background. |
 | `TEXT_COLOR` | `string` | `"#c8c8c8"` | ASCII character color. |
 
+`reducedMotion` is a constructor option (not a default): `true` skips the ASCII animation and shows the original image, `false` forces animation, omitted follows `prefers-reduced-motion`.
+
 Column count is recalculated from the image’s displayed width:  
 `cols = clamp(ASCII_COLUMNS, round(width / TARGET_CELL_CSS_PX), MAX_ASCII_COLUMNS)`.
 
@@ -214,6 +239,8 @@ LasciiImageEffect.init(selector = "[data-lascii-image]")
 
 Creates one `LasciiImageEffect` per matching image, with `index` from `forEach` order.
 
+Both effects extend `EventTarget` and emit lifecycle events (see [Lifecycle events](#lifecycle-events)). For images, `start` / `complete` `detail.text` is `img.alt` or, if empty, `img.src`.
+
 ### Example
 
 ```js
@@ -224,6 +251,59 @@ document.querySelectorAll("[data-lascii-image]").forEach((img, index) => {
   });
 });
 ```
+
+---
+
+## Lifecycle events
+
+`LasciiTextEffect` and `LasciiImageEffect` extend `EventTarget`. Attach listeners after construction; the first animation turn waits one microtask so `start` is not missed.
+
+| Event     | When                     | `detail`               |
+| --------- | ------------------------ | ---------------------- |
+| `start`   | Animation begins         | `{ text: string }`     |
+| `progress`| During the animation     | `{ progress: number }` |
+| `complete`| Animation finished       | `{ text: string }`     |
+| `error`   | Recoverable runtime failure | `{ error: Error }`  |
+
+`progress` is a number from `0` to `1`. Looping text effects emit `start` / `complete` once per phrase.
+
+```js
+import { LasciiEvent, LasciiTextEffect } from "lascii";
+
+const effect = new LasciiTextEffect(element);
+
+effect.addEventListener(LasciiEvent.Complete, (event) => {
+  console.log("Effect completed:", event.detail.text);
+});
+
+effect.addEventListener("error", (event) => {
+  console.warn(event.detail.error);
+});
+```
+
+---
+
+## Accessibility
+
+Effects follow `prefers-reduced-motion: reduce` (WCAG 2.3.3 / motion preferences):
+
+- **Text** — the target phrase is applied immediately; scramble/`requestAnimationFrame` is skipped. Looped phrases still advance after `phraseDelay`, without animation.
+- **Image** — the original `<img>` stays visible; canvas sampling and cell animation do not run.
+
+Override with `{ reducedMotion: true }` or `{ reducedMotion: false }`.
+
+### Screen readers
+
+`LasciiTextEffect` treats the host as a live region:
+
+| Attribute | When | Purpose |
+| --------- | ---- | ------- |
+| `aria-live="polite"` | If the author did not set `aria-live` | Announce phrase changes without interrupting |
+| `aria-atomic="true"` | If missing | Read the whole phrase |
+| `aria-busy="true"` and `aria-label` | During scramble | Expose the destination text instead of random characters |
+| (remove busy/label) | When complete | Accessible name falls back to visible `textContent` |
+
+`LasciiImageEffect` sets `aria-hidden="true"` on the decorative canvas and `aria-busy="true"` on the image while the ASCII overlay is running (cleared on reveal, error, or dispose). Prefer a meaningful `alt` on the `<img>`.
 
 ---
 
@@ -257,7 +337,7 @@ initDom();
 
 ### Tree-shaking / side effects
 
-Only `./dist/auto.js` is marked as side-effectful in `package.json`. All other entry points are tree-shakeable:
+Only `./dist/auto.js` and `./dist/auto.cjs` are marked as side-effectful in `package.json`. All other entry points are tree-shakeable:
 
 - `import { LasciiTextEffect } from "lascii"` — can drop unused image code
 - `import from "lascii/core/text"` — text effect only

@@ -1,39 +1,71 @@
 {
   "name": "lascii",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Lightweight ASCII animation effects for the web",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      },
       "default": "./dist/index.js"
     },
     "./auto": {
-      "types": "./dist/auto.d.ts",
-      "import": "./dist/auto.js",
+      "import": {
+        "types": "./dist/auto.d.ts",
+        "default": "./dist/auto.js"
+      },
+      "require": {
+        "types": "./dist/auto.d.cts",
+        "default": "./dist/auto.cjs"
+      },
       "default": "./dist/auto.js"
     },
     "./dom": {
-      "types": "./dist/adapters/dom/index.d.ts",
-      "import": "./dist/adapters/dom/index.js",
-      "default": "./dist/adapters/dom/index.js"
+      "import": {
+        "types": "./dist/dom/index.d.ts",
+        "default": "./dist/dom/index.js"
+      },
+      "require": {
+        "types": "./dist/dom/index.d.cts",
+        "default": "./dist/dom/index.cjs"
+      },
+      "default": "./dist/dom/index.js"
     },
     "./core/text": {
-      "types": "./dist/core/effects/LasciiTextEffect.d.ts",
-      "import": "./dist/core/effects/LasciiTextEffect.js",
-      "default": "./dist/core/effects/LasciiTextEffect.js"
+      "import": {
+        "types": "./dist/core/text/index.d.ts",
+        "default": "./dist/core/text/index.js"
+      },
+      "require": {
+        "types": "./dist/core/text/index.d.cts",
+        "default": "./dist/core/text/index.cjs"
+      },
+      "default": "./dist/core/text/index.js"
     },
     "./core/image": {
-      "types": "./dist/core/effects/LasciiImageEffect.d.ts",
-      "import": "./dist/core/effects/LasciiImageEffect.js",
-      "default": "./dist/core/effects/LasciiImageEffect.js"
+      "import": {
+        "types": "./dist/core/image/index.d.ts",
+        "default": "./dist/core/image/index.js"
+      },
+      "require": {
+        "types": "./dist/core/image/index.d.cts",
+        "default": "./dist/core/image/index.cjs"
+      },
+      "default": "./dist/core/image/index.js"
     }
   },
   "sideEffects": [
-    "./dist/auto.js"
+    "./dist/auto.js",
+    "./dist/auto.cjs"
   ],
   "files": [
     "dist",
@@ -41,7 +73,11 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsup",
+    "build:watch": "tsup --watch",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prepare": "npm run build"
   },
   "keywords": [
@@ -63,6 +99,9 @@
     "url": "git+https://github.com/whosramoss/lascii.git"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "jsdom": "^26.1.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.0"
   }
 }
